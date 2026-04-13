@@ -18,7 +18,7 @@ const navItems = [
   { href: '/agencies', label: '代理店分析', icon: Building2 },
   { href: '/ng', label: 'NG店舗管理', icon: AlertTriangle },
   { href: '/targets', label: '目標管理', icon: Target },
-  { href: '/import', label: 'データ取込', icon: Upload },
+  { href: '/import', label: 'データ管理', icon: Upload },
 ];
 
 export function Sidebar() {
