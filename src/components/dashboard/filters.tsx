@@ -12,7 +12,7 @@ import {
 import type { Agency } from '@/lib/data/types';
 import { formatYearMonthLong } from '@/lib/utils/year-month';
 
-interface FiltersProps {
+interface DashboardFiltersProps {
   agencies: Agency[];
   months: string[];
   units: string[];
@@ -21,14 +21,14 @@ interface FiltersProps {
   currentUnit: string;
 }
 
-export function Filters({
+export function DashboardFilters({
   agencies,
   months,
   units,
   currentMonth,
   currentAgency,
   currentUnit,
-}: FiltersProps) {
+}: DashboardFiltersProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 

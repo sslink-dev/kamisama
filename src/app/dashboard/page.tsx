@@ -4,7 +4,7 @@ import { KpiCards } from '@/components/dashboard/kpi-cards';
 import { TrendChart } from '@/components/dashboard/trend-chart';
 import { AgencyChart } from '@/components/dashboard/agency-chart';
 import { TargetChart } from '@/components/dashboard/target-chart';
-import { Filters } from '@/components/dashboard/filters';
+import { DashboardFilters } from '@/components/dashboard/filters';
 import {
   getKpiSummary,
   getMonthlyTrends,
@@ -32,8 +32,9 @@ export default async function DashboardPage({
     ...(selectedUnit !== 'all' ? { unit: selectedUnit } : {}),
   };
 
+  const hasFilters = Object.keys(filters).length > 0;
   const kpi = getKpiSummary(selectedMonth);
-  const trends = getMonthlyTrends(Object.keys(filters).length > 0 ? filters : undefined)
+  const trends = getMonthlyTrends(hasFilters ? filters : undefined)
     .filter(t => t.yearMonth <= '2503');
   const agencySummaries = getAgencySummaries(selectedMonth);
 
@@ -42,7 +43,7 @@ export default async function DashboardPage({
       <Header title="ダッシュボード" />
       <div className="space-y-6 p-6">
         <Suspense fallback={null}>
-          <Filters
+          <DashboardFilters
             agencies={getAgencies()}
             months={historicalMonths}
             units={getUnits()}
@@ -65,7 +66,7 @@ export default async function DashboardPage({
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <AgencyChart data={agencySummaries} />
-          <TargetChart data={getMonthlyTrends(Object.keys(filters).length > 0 ? filters : undefined)} />
+          <TargetChart data={getMonthlyTrends(hasFilters ? filters : undefined)} />
         </div>
       </div>
     </>

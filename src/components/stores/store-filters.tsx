@@ -11,13 +11,13 @@ import {
 } from '@/components/ui/select';
 import type { Agency } from '@/lib/data/types';
 
-interface StoreFiltersProps {
+interface StoreClientFiltersProps {
   agencies: Agency[];
   units: string[];
   ranks: string[];
 }
 
-export function StoreFilters({ agencies, units, ranks }: StoreFiltersProps) {
+export function StoreClientFilters({ agencies, units, ranks }: StoreClientFiltersProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 

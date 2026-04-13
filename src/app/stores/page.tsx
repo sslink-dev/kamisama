@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 import { Header } from '@/components/layout/header';
 import { StoreTable } from '@/components/stores/store-table';
-import { StoreFilters } from '@/components/stores/store-filters';
+import { StoreClientFilters } from '@/components/stores/store-filters';
 import {
   getStoresWithLatestMetrics,
   getAgencies,
@@ -32,7 +32,7 @@ export default async function StoresPage({
       <Header title="店舗一覧" />
       <div className="space-y-4 p-6">
         <Suspense fallback={null}>
-          <StoreFilters
+          <StoreClientFilters
             agencies={getAgencies()}
             units={getUnits()}
             ranks={getRanks()}
