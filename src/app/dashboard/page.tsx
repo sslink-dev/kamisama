@@ -21,7 +21,7 @@ export default async function DashboardPage({
   searchParams: Promise<{ month?: string; agency?: string; unit?: string }>;
 }) {
   const params = await searchParams;
-  const months = getAvailableMonths();
+  const months = await getAvailableMonths();
   const historicalMonths = months.filter(m => m <= '2503');
   const selectedMonth = params.month || getLatestMonth(historicalMonths);
   const selectedAgency = params.agency || 'all';
@@ -33,10 +33,15 @@ export default async function DashboardPage({
   };
 
   const hasFilters = Object.keys(filters).length > 0;
-  const kpi = getKpiSummary(selectedMonth);
-  const trends = getMonthlyTrends(hasFilters ? filters : undefined)
-    .filter(t => t.yearMonth <= '2503');
-  const agencySummaries = getAgencySummaries(selectedMonth);
+  const [kpi, allTrends, agencySummaries, agencies, units, targetTrends] = await Promise.all([
+    getKpiSummary(selectedMonth),
+    getMonthlyTrends(hasFilters ? filters : undefined),
+    getAgencySummaries(selectedMonth),
+    getAgencies(),
+    getUnits(),
+    getMonthlyTrends(hasFilters ? filters : undefined),
+  ]);
+  const trends = allTrends.filter(t => t.yearMonth <= '2503');
 
   return (
     <>
@@ -44,9 +49,9 @@ export default async function DashboardPage({
       <div className="space-y-6 p-6">
         <Suspense fallback={null}>
           <DashboardFilters
-            agencies={getAgencies()}
+            agencies={agencies}
             months={historicalMonths}
-            units={getUnits()}
+            units={units}
             currentMonth={selectedMonth}
             currentAgency={selectedAgency}
             currentUnit={selectedUnit}
@@ -66,7 +71,7 @@ export default async function DashboardPage({
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <AgencyChart data={agencySummaries} />
-          <TargetChart data={getMonthlyTrends(hasFilters ? filters : undefined)} />
+          <TargetChart data={targetTrends} />
         </div>
       </div>
     </>

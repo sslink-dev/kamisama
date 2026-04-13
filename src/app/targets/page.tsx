@@ -11,8 +11,8 @@ import {
 import { getMonthlyTrends } from '@/lib/data/repository';
 import { formatYearMonthLong, formatNumber, formatPercent } from '@/lib/utils/year-month';
 
-export default function TargetsPage() {
-  const trends = getMonthlyTrends().filter(t => t.totalTargetReferrals > 0);
+export default async function TargetsPage() {
+  const trends = (await getMonthlyTrends()).filter(t => t.totalTargetReferrals > 0);
 
   return (
     <>

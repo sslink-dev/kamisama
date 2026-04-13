@@ -12,9 +12,11 @@ import {
 import { getStores, getNgReasons } from '@/lib/data/repository';
 import { NgReasonChart } from './ng-reason-chart';
 
-export default function NgPage() {
-  const ngStores = getStores({ isNg: true });
-  const reasons = getNgReasons();
+export default async function NgPage() {
+  const [ngStores, reasons] = await Promise.all([
+    getStores({ isNg: true }),
+    getNgReasons(),
+  ]);
 
   const reasonCounts = reasons.map(reason => ({
     reason,

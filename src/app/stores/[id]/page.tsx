@@ -22,10 +22,10 @@ export default async function StoreDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const store = getStoreById(id);
+  const store = await getStoreById(id);
   if (!store) notFound();
 
-  const metrics = getMetricsByStore(id);
+  const metrics = await getMetricsByStore(id);
 
   return (
     <>
