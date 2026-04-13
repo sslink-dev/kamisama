@@ -13,8 +13,10 @@ import { getAgencySummaries } from '@/lib/data/repository';
 import { formatPercent, formatNumber } from '@/lib/utils/year-month';
 import { AgencyComparisonChart } from './agency-comparison-chart';
 
-export default function AgenciesPage() {
-  const summaries = getAgencySummaries()
+export const dynamic = 'force-dynamic';
+
+export default async function AgenciesPage() {
+  const summaries = (await getAgencySummaries())
     .sort((a, b) => b.totalReferrals - a.totalReferrals);
 
   return (

@@ -8,6 +8,8 @@ import { ArrowLeft } from 'lucide-react';
 import { getStoreById, getMetricsByStore } from '@/lib/data/repository';
 import { StoreMetricsChart } from './store-metrics-chart';
 
+export const dynamic = 'force-dynamic';
+
 const rankColors: Record<string, string> = {
   A: 'bg-green-100 text-green-800',
   B: 'bg-blue-100 text-blue-800',
@@ -22,10 +24,10 @@ export default async function StoreDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const store = getStoreById(id);
+  const store = await getStoreById(id);
   if (!store) notFound();
 
-  const metrics = getMetricsByStore(id);
+  const metrics = await getMetricsByStore(id);
 
   return (
     <>

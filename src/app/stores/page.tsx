@@ -9,6 +9,8 @@ import {
   getRanks,
 } from '@/lib/data/repository';
 
+export const dynamic = 'force-dynamic';
+
 export default async function StoresPage({
   searchParams,
 }: {
@@ -22,10 +24,15 @@ export default async function StoresPage({
     ...(params.ng === 'ng' ? { isNg: true } : params.ng === 'active' ? { isNg: false } : {}),
   };
 
-  const stores = getStoresWithLatestMetrics(
-    Object.keys(filters).length > 0 ? filters : undefined,
-    '2503'
-  );
+  const [stores, agencies, units, ranks] = await Promise.all([
+    getStoresWithLatestMetrics(
+      Object.keys(filters).length > 0 ? filters : undefined,
+      '2503'
+    ),
+    getAgencies(),
+    getUnits(),
+    getRanks(),
+  ]);
 
   return (
     <>
@@ -33,9 +40,9 @@ export default async function StoresPage({
       <div className="space-y-4 p-6">
         <Suspense fallback={null}>
           <StoreClientFilters
-            agencies={getAgencies()}
-            units={getUnits()}
-            ranks={getRanks()}
+            agencies={agencies}
+            units={units}
+            ranks={ranks}
           />
         </Suspense>
         <StoreTable stores={stores} />
