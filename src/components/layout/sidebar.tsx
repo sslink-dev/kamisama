@@ -11,6 +11,7 @@ import {
   Upload,
   LogOut,
   User,
+  ShieldCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -23,11 +24,16 @@ const navItems = [
   { href: '/import', label: 'データ管理', icon: Upload },
 ];
 
+const adminNavItems = [
+  { href: '/admin/users', label: 'ユーザー管理', icon: ShieldCheck },
+];
+
 interface SidebarProps {
   userEmail?: string;
+  isAdmin?: boolean;
 }
 
-export function Sidebar({ userEmail }: SidebarProps) {
+export function Sidebar({ userEmail, isAdmin }: SidebarProps) {
   const pathname = usePathname();
 
   return (
@@ -55,6 +61,33 @@ export function Sidebar({ userEmail }: SidebarProps) {
             </Link>
           );
         })}
+
+        {isAdmin && (
+          <>
+            <div className="my-3 border-t" />
+            <div className="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">
+              管理
+            </div>
+            {adminNavItems.map(item => {
+              const isActive = pathname.startsWith(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                    isActive
+                      ? 'bg-purple-50 text-purple-700'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  )}
+                >
+                  <item.icon className="h-5 w-5" />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </>
+        )}
       </nav>
 
       {userEmail && (

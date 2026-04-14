@@ -1,79 +1,60 @@
-import { Suspense } from 'react';
 import { Header } from '@/components/layout/header';
-import { KpiCards } from '@/components/dashboard/kpi-cards';
-import { TrendChart } from '@/components/dashboard/trend-chart';
-import { AgencyChart } from '@/components/dashboard/agency-chart';
-import { TargetChart } from '@/components/dashboard/target-chart';
-import { DashboardFilters } from '@/components/dashboard/filters';
+import { Button } from '@/components/ui/button';
+import { Edit } from 'lucide-react';
+import Link from 'next/link';
 import {
-  getKpiSummary,
-  getMonthlyTrends,
-  getAgencySummaries,
-  getAgencies,
+  getDashboardLayout,
   getAvailableMonths,
-  getUnits,
+  isCurrentUserAdmin,
 } from '@/lib/data/repository';
-import { getLatestMonth } from '@/lib/utils/year-month';
+import { WidgetRenderer } from '@/components/dashboard/widgets/widget-renderer';
+import { WidgetWrapper } from '@/components/dashboard/widgets/widget-wrapper';
 
 export const dynamic = 'force-dynamic';
 
-export default async function DashboardPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ month?: string; agency?: string; unit?: string }>;
-}) {
-  const params = await searchParams;
-  const months = await getAvailableMonths();
-  const historicalMonths = months.filter(m => m <= '2503');
-  const selectedMonth = params.month || getLatestMonth(historicalMonths);
-  const selectedAgency = params.agency || 'all';
-  const selectedUnit = params.unit || 'all';
-
-  const filters = {
-    ...(selectedAgency !== 'all' ? { agencyId: selectedAgency } : {}),
-    ...(selectedUnit !== 'all' ? { unit: selectedUnit } : {}),
-  };
-
-  const hasFilters = Object.keys(filters).length > 0;
-  const [kpi, trends, agencySummaries, agencies, units, allTrends] = await Promise.all([
-    getKpiSummary(selectedMonth),
-    getMonthlyTrends(hasFilters ? filters : undefined).then(t => t.filter(t => t.yearMonth <= '2503')),
-    getAgencySummaries(selectedMonth),
-    getAgencies(),
-    getUnits(),
-    getMonthlyTrends(hasFilters ? filters : undefined),
+export default async function DashboardPage() {
+  const [widgets, months, isAdmin] = await Promise.all([
+    getDashboardLayout(),
+    getAvailableMonths(),
+    isCurrentUserAdmin(),
   ]);
+  const historicalMonths = months.filter(m => m <= '2503');
 
   return (
     <>
       <Header title="ダッシュボード" />
-      <div className="space-y-6 p-6">
-        <Suspense fallback={null}>
-          <DashboardFilters
-            agencies={agencies}
-            months={historicalMonths}
-            units={units}
-            currentMonth={selectedMonth}
-            currentAgency={selectedAgency}
-            currentUnit={selectedUnit}
-          />
-        </Suspense>
+      <div className="p-6">
+        {isAdmin && (
+          <div className="mb-4 flex justify-end">
+            <Link href="/dashboard/edit">
+              <Button variant="outline" size="sm">
+                <Edit className="mr-1.5 h-3.5 w-3.5" />
+                編集
+              </Button>
+            </Link>
+          </div>
+        )}
 
-        <KpiCards
-          totalReferrals={kpi.totalReferrals}
-          referralRate={kpi.referralRate}
-          targetAchievementRate={kpi.targetAchievementRate}
-          activeStoreCount={kpi.activeStoreCount}
-          totalTargetReferrals={kpi.totalTargetReferrals}
-          totalBrokerage={kpi.totalBrokerage}
-        />
-
-        <TrendChart data={trends} />
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <AgencyChart data={agencySummaries} />
-          <TargetChart data={allTrends} />
-        </div>
+        {widgets.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-12 text-center text-sm text-gray-500">
+            ダッシュボードが設定されていません。
+            {isAdmin && (
+              <div className="mt-3">
+                <Link href="/dashboard/edit">
+                  <Button size="sm">設定を始める</Button>
+                </Link>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-4">
+            {widgets.map(widget => (
+              <WidgetWrapper key={widget.id} widget={widget}>
+                <WidgetRenderer widget={widget} historicalMonths={historicalMonths} />
+              </WidgetWrapper>
+            ))}
+          </div>
+        )}
       </div>
     </>
   );

@@ -65,6 +65,52 @@ export interface MonthlyTrend {
   storeCount: number;
 }
 
+// === Dashboard widgets ===
+export type WidgetType =
+  | 'kpi_summary'
+  | 'trend_chart'
+  | 'agency_chart'
+  | 'target_chart'
+  | 'ng_pie'
+  | 'ranking_list';
+
+export type WidgetSize = 'third' | 'half' | 'full';
+
+export interface WidgetConfig {
+  title?: string;
+  month?: string;
+  agencyId?: string;
+  unit?: string;
+  limit?: number;
+  chartStyle?: 'line' | 'bar';
+  rankingType?: 'agency_by_referrals' | 'store_by_referrals' | 'ng_reasons';
+}
+
+export interface Widget {
+  id: string;
+  type: WidgetType;
+  size: WidgetSize;
+  config: WidgetConfig;
+}
+
+export interface DashboardLayoutRow {
+  id: string;
+  widgets: Widget[];
+  updated_at: string;
+  updated_by: string | null;
+}
+
+// === User roles ===
+export type UserRole = 'admin' | 'user';
+
+export interface UserRoleRow {
+  user_id: string;
+  email: string;
+  role: UserRole;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface StoreFilters {
   agencyId?: string;
   unit?: string;

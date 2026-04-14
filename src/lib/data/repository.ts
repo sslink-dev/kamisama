@@ -4,6 +4,7 @@ import { getAdminSupabaseClient } from '@/lib/supabase/admin';
 import type {
   Agency, Store, Metric, StoreFilters,
   AgencySummary, MonthlyTrend, StoreWithMetrics,
+  Widget, UserRole, UserRoleRow,
 } from './types';
 
 // キャッシュ期間 (秒): データは手動インポート時のみ変わるので長めでOK
@@ -360,3 +361,87 @@ export const getKpiSummary = unstable_cache(
   ['kpi_summary'],
   { revalidate: CACHE_TTL, tags: ['metrics'] }
 );
+
+// ================================
+// Dashboard Layout & User Roles
+// ================================
+
+// --- 現在ログインユーザーのロール ---
+export async function getCurrentUserRole(): Promise<UserRole | null> {
+  const supabase = await createServerSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', user.id)
+    .maybeSingle();
+  return (data?.role as UserRole) ?? 'user';
+}
+
+export async function isCurrentUserAdmin(): Promise<boolean> {
+  return (await getCurrentUserRole()) === 'admin';
+}
+
+// --- 全ユーザーのロール一覧 (管理コンソール用) ---
+export async function getAllUserRoles(): Promise<UserRoleRow[]> {
+  const supabase = getAdminSupabaseClient();
+  // auth.users は通常の select では取れないので admin client を使用
+  const { data: authUsers } = await supabase.auth.admin.listUsers({ perPage: 200 });
+  const users = authUsers?.users || [];
+
+  const { data: roles } = await supabase.from('user_roles').select('*');
+  const roleMap = new Map<string, UserRoleRow>(
+    (roles || []).map((r: Record<string, unknown>) => [r.user_id as string, r as unknown as UserRoleRow])
+  );
+
+  return users.map(u => {
+    const existing = roleMap.get(u.id);
+    return existing || {
+      user_id: u.id,
+      email: u.email || '',
+      role: 'user' as UserRole,
+      created_at: u.created_at || '',
+      updated_at: u.created_at || '',
+    };
+  });
+}
+
+// --- ロール更新 (admin client 経由で RLS バイパス。Server Action 経由で呼ぶこと) ---
+export async function upsertUserRole(userId: string, role: UserRole): Promise<void> {
+  const supabase = getAdminSupabaseClient();
+  const { data: authUser } = await supabase.auth.admin.getUserById(userId);
+  const email = authUser?.user?.email || '';
+  await supabase.from('user_roles').upsert({
+    user_id: userId,
+    email,
+    role,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'user_id' });
+}
+
+// --- ダッシュボードレイアウト取得 ---
+export async function getDashboardLayout(): Promise<Widget[]> {
+  const supabase = await createServerSupabaseClient();
+  const { data } = await supabase
+    .from('dashboard_layout')
+    .select('widgets')
+    .eq('id', 'default')
+    .maybeSingle();
+  if (!data) return [];
+  return (data.widgets as Widget[]) || [];
+}
+
+// --- ダッシュボードレイアウト保存 (admin 専用、Server Action 経由) ---
+export async function saveDashboardLayout(widgets: Widget[]): Promise<void> {
+  const supabase = getAdminSupabaseClient();
+  const serverClient = await createServerSupabaseClient();
+  const { data: { user } } = await serverClient.auth.getUser();
+
+  await supabase.from('dashboard_layout').upsert({
+    id: 'default',
+    widgets,
+    updated_at: new Date().toISOString(),
+    updated_by: user?.id || null,
+  }, { onConflict: 'id' });
+}

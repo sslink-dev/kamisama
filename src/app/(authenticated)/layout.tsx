@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { Sidebar } from '@/components/layout/sidebar';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { isCurrentUserAdmin } from '@/lib/data/repository';
 
 export default async function AuthenticatedLayout({
   children,
@@ -14,9 +15,11 @@ export default async function AuthenticatedLayout({
     redirect('/auth/login');
   }
 
+  const isAdmin = await isCurrentUserAdmin();
+
   return (
     <>
-      <Sidebar userEmail={user.email ?? ''} />
+      <Sidebar userEmail={user.email ?? ''} isAdmin={isAdmin} />
       <main className="ml-64 min-h-full">{children}</main>
     </>
   );
