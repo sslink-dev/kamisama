@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase/client';
+import { refreshViews } from '@/lib/data/actions';
 import type { ParsedStore, ParsedMetric } from './parser';
 
 export interface ImportResult {
@@ -137,6 +138,14 @@ export async function importToSupabase(
     } else {
       result.metricsUpserted += chunk.length;
     }
+  }
+
+  // マテリアライズドビューをリフレッシュ (集計を最新化)
+  onProgress?.('集計を更新中...', 0, 1);
+  try {
+    await refreshViews();
+  } catch (e) {
+    result.errors.push(`ビュー更新: ${e instanceof Error ? e.message : 'unknown'}`);
   }
 
   onProgress?.('完了', 1, 1);

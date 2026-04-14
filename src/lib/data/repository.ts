@@ -1,8 +1,28 @@
+import { unstable_cache } from 'next/cache';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { getAdminSupabaseClient } from '@/lib/supabase/admin';
 import type {
   Agency, Store, Metric, StoreFilters,
   AgencySummary, MonthlyTrend, StoreWithMetrics,
 } from './types';
+
+// キャッシュ期間 (秒): データは手動インポート時のみ変わるので長めでOK
+const CACHE_TTL = 300; // 5分
+
+/**
+ * マテリアライズドビューを最新化し、Next.jsキャッシュも破棄。
+ * CSVインポート等、データ更新後に呼び出す。
+ */
+export async function refreshMaterializedViews(): Promise<void> {
+  const supabase = getAdminSupabaseClient();
+  await supabase.rpc('refresh_all_views');
+  // Next.jsキャッシュ無効化 (同じタグのunstable_cacheをクリア)
+  const { revalidateTag } = await import('next/cache');
+  revalidateTag('metrics', 'max');
+  revalidateTag('stores', 'max');
+  revalidateTag('companies', 'max');
+  revalidateTag('agencies', 'max');
+}
 
 // --- DB row to app type converters ---
 function toStore(row: Record<string, unknown>): Store {
@@ -39,12 +59,16 @@ function toMetric(row: Record<string, unknown>): Metric {
   };
 }
 
-// --- Agencies ---
-export async function getAgencies(): Promise<Agency[]> {
-  const supabase = await createServerSupabaseClient();
-  const { data } = await supabase.from('agencies').select('*').order('name');
-  return (data || []) as Agency[];
-}
+// --- Agencies (cached) ---
+export const getAgencies = unstable_cache(
+  async (): Promise<Agency[]> => {
+    const supabase = getAdminSupabaseClient();
+    const { data } = await supabase.from('agencies').select('*').order('name');
+    return (data || []) as Agency[];
+  },
+  ['agencies'],
+  { revalidate: CACHE_TTL, tags: ['agencies'] }
+);
 
 // --- Stores ---
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -126,16 +150,14 @@ export async function getMetricsByStore(storeId: string): Promise<Metric[]> {
   return (data || []).map(toMetric);
 }
 
-export async function getMonthlyTrends(filters?: StoreFilters): Promise<MonthlyTrend[]> {
-  const supabase = await createServerSupabaseClient();
-
-  // フィルタなしの場合は事前集計ビューを使用（高速）
-  if (!filters || Object.keys(filters).length === 0) {
+const getAllMonthlyTrendsCached = unstable_cache(
+  async (): Promise<MonthlyTrend[]> => {
+    const supabase = getAdminSupabaseClient();
     const { data } = await supabase
       .from('v_monthly_trends')
       .select('*')
       .order('year_month');
-    return (data || []).map(d => ({
+    return (data || []).map((d: Record<string, unknown>) => ({
       yearMonth: d.year_month as string,
       totalReferrals: d.total_referrals as number,
       totalBrokerage: d.total_brokerage as number,
@@ -143,7 +165,18 @@ export async function getMonthlyTrends(filters?: StoreFilters): Promise<MonthlyT
       totalTargetReferrals: d.total_target_referrals as number,
       storeCount: d.store_count as number,
     }));
+  },
+  ['monthly_trends_all'],
+  { revalidate: CACHE_TTL, tags: ['metrics'] }
+);
+
+export async function getMonthlyTrends(filters?: StoreFilters): Promise<MonthlyTrend[]> {
+  // フィルタなしはキャッシュから返却
+  if (!filters || Object.keys(filters).length === 0) {
+    return getAllMonthlyTrendsCached();
   }
+
+  const supabase = await createServerSupabaseClient();
 
   // フィルタありの場合: 該当店舗のメトリクスを個別集計
   const stores = await getStores(filters);
@@ -185,12 +218,10 @@ export async function getMonthlyTrends(filters?: StoreFilters): Promise<MonthlyT
     }));
 }
 
-// --- Agency Summaries ---
-export async function getAgencySummaries(yearMonth?: string): Promise<AgencySummary[]> {
-  const supabase = await createServerSupabaseClient();
-
-  if (yearMonth) {
-    // 月指定あり: RPC関数を使用（DBで集計）
+// --- Agency Summaries (cached) ---
+const getAgencySummariesByMonthCached = unstable_cache(
+  async (yearMonth: string): Promise<AgencySummary[]> => {
+    const supabase = getAdminSupabaseClient();
     const { data } = await supabase.rpc('get_agency_summaries_by_month', { p_year_month: yearMonth });
     return (data || []).map((d: Record<string, unknown>) => ({
       agencyId: d.agency_id as string,
@@ -204,55 +235,74 @@ export async function getAgencySummaries(yearMonth?: string): Promise<AgencySumm
       totalTargetReferrals: d.total_target_referrals as number,
       targetAchievementRate: Number(d.target_achievement_rate) || 0,
     }));
-  }
+  },
+  ['agency_summaries_by_month'],
+  { revalidate: CACHE_TTL, tags: ['metrics'] }
+);
 
-  // 月指定なし: 全期間集計ビューを使用
-  const { data } = await supabase.from('v_agency_totals').select('*');
-  return (data || []).map((d: Record<string, unknown>) => ({
-    agencyId: d.agency_id as string,
-    agencyName: d.agency_name as string,
-    storeCount: d.store_count as number,
-    activeStoreCount: d.active_store_count as number,
-    ngStoreCount: d.ng_store_count as number,
-    totalReferrals: d.total_referrals as number,
-    totalBrokerage: d.total_brokerage as number,
-    avgReferralRate: Number(d.avg_referral_rate) || 0,
-    totalTargetReferrals: d.total_target_referrals as number,
-    targetAchievementRate: Number(d.target_achievement_rate) || 0,
-  }));
+const getAgencySummariesTotalCached = unstable_cache(
+  async (): Promise<AgencySummary[]> => {
+    const supabase = getAdminSupabaseClient();
+    const { data } = await supabase.from('v_agency_totals').select('*');
+    return (data || []).map((d: Record<string, unknown>) => ({
+      agencyId: d.agency_id as string,
+      agencyName: d.agency_name as string,
+      storeCount: d.store_count as number,
+      activeStoreCount: d.active_store_count as number,
+      ngStoreCount: d.ng_store_count as number,
+      totalReferrals: d.total_referrals as number,
+      totalBrokerage: d.total_brokerage as number,
+      avgReferralRate: Number(d.avg_referral_rate) || 0,
+      totalTargetReferrals: d.total_target_referrals as number,
+      targetAchievementRate: Number(d.target_achievement_rate) || 0,
+    }));
+  },
+  ['agency_summaries_total'],
+  { revalidate: CACHE_TTL, tags: ['metrics', 'stores'] }
+);
+
+export async function getAgencySummaries(yearMonth?: string): Promise<AgencySummary[]> {
+  return yearMonth ? getAgencySummariesByMonthCached(yearMonth) : getAgencySummariesTotalCached();
 }
 
-// --- Utility ---
-export async function getAvailableMonths(): Promise<string[]> {
-  const supabase = await createServerSupabaseClient();
-  // v_monthly_trends は year_month ユニーク集約なのでそのまま取得
-  const { data } = await supabase
-    .from('v_monthly_trends')
-    .select('year_month')
-    .order('year_month');
-  return (data || []).map(d => (d as Record<string, unknown>).year_month as string);
-}
-
-async function getDistinctStoreColumn(column: string): Promise<string[]> {
-  const supabase = await createServerSupabaseClient();
-  const values = new Set<string>();
-  let from = 0;
-  while (true) {
+// --- Utility (cached) ---
+export const getAvailableMonths = unstable_cache(
+  async (): Promise<string[]> => {
+    const supabase = getAdminSupabaseClient();
     const { data } = await supabase
-      .from('stores')
-      .select(column)
-      .not(column, 'is', null)
-      .range(from, from + 999);
-    if (!data || data.length === 0) break;
-    data.forEach(d => {
-      const v = (d as unknown as Record<string, unknown>)[column] as string;
-      if (v) values.add(v);
-    });
-    if (data.length < 1000) break;
-    from += 1000;
-  }
-  return [...values].sort();
-}
+      .from('v_monthly_trends')
+      .select('year_month')
+      .order('year_month');
+    return (data || []).map(d => (d as Record<string, unknown>).year_month as string);
+  },
+  ['available_months'],
+  { revalidate: CACHE_TTL, tags: ['metrics'] }
+);
+
+const getDistinctStoreColumn = unstable_cache(
+  async (column: string): Promise<string[]> => {
+    const supabase = getAdminSupabaseClient();
+    const values = new Set<string>();
+    let from = 0;
+    while (true) {
+      const { data } = await supabase
+        .from('stores')
+        .select(column)
+        .not(column, 'is', null)
+        .range(from, from + 999);
+      if (!data || data.length === 0) break;
+      data.forEach(d => {
+        const v = (d as unknown as Record<string, unknown>)[column] as string;
+        if (v) values.add(v);
+      });
+      if (data.length < 1000) break;
+      from += 1000;
+    }
+    return [...values].sort();
+  },
+  ['distinct_store_column'],
+  { revalidate: CACHE_TTL, tags: ['stores'] }
+);
 
 export async function getUnits(): Promise<string[]> {
   return getDistinctStoreColumn('unit');
@@ -270,35 +320,43 @@ export async function getNgReasons(): Promise<string[]> {
   return getDistinctStoreColumn('ng_reason');
 }
 
-export async function getCompanies(): Promise<{ id: string; name: string }[]> {
-  const supabase = await createServerSupabaseClient();
-  const all: { id: string; name: string }[] = [];
-  let from = 0;
-  while (true) {
-    const { data } = await supabase
-      .from('companies')
-      .select('id, name')
-      .order('name')
-      .range(from, from + 999);
-    if (!data || data.length === 0) break;
-    all.push(...(data as { id: string; name: string }[]));
-    if (data.length < 1000) break;
-    from += 1000;
-  }
-  return all;
-}
+export const getCompanies = unstable_cache(
+  async (): Promise<{ id: string; name: string }[]> => {
+    const supabase = getAdminSupabaseClient();
+    const all: { id: string; name: string }[] = [];
+    let from = 0;
+    while (true) {
+      const { data } = await supabase
+        .from('companies')
+        .select('id, name')
+        .order('name')
+        .range(from, from + 999);
+      if (!data || data.length === 0) break;
+      all.push(...(data as { id: string; name: string }[]));
+      if (data.length < 1000) break;
+      from += 1000;
+    }
+    return all;
+  },
+  ['companies'],
+  { revalidate: CACHE_TTL, tags: ['companies'] }
+);
 
-export async function getKpiSummary(yearMonth: string) {
-  const supabase = await createServerSupabaseClient();
-  const { data } = await supabase.rpc('get_kpi_summary', { p_year_month: yearMonth });
-  const row = (data && data[0]) || {};
-  return {
-    totalReferrals: (row.total_referrals as number) || 0,
-    totalBrokerage: (row.total_brokerage as number) || 0,
-    referralRate: Number(row.referral_rate) || 0,
-    targetAchievementRate: Number(row.target_achievement_rate) || 0,
-    totalTargetReferrals: (row.total_target_referrals as number) || 0,
-    activeStoreCount: (row.active_store_count as number) || 0,
-    storesWithData: (row.stores_with_data as number) || 0,
-  };
-}
+export const getKpiSummary = unstable_cache(
+  async (yearMonth: string) => {
+    const supabase = getAdminSupabaseClient();
+    const { data } = await supabase.rpc('get_kpi_summary', { p_year_month: yearMonth });
+    const row = (data && data[0]) || {};
+    return {
+      totalReferrals: (row.total_referrals as number) || 0,
+      totalBrokerage: (row.total_brokerage as number) || 0,
+      referralRate: Number(row.referral_rate) || 0,
+      targetAchievementRate: Number(row.target_achievement_rate) || 0,
+      totalTargetReferrals: (row.total_target_referrals as number) || 0,
+      activeStoreCount: (row.active_store_count as number) || 0,
+      storesWithData: (row.stores_with_data as number) || 0,
+    };
+  },
+  ['kpi_summary'],
+  { revalidate: CACHE_TTL, tags: ['metrics'] }
+);
