@@ -367,11 +367,13 @@ export const getKpiSummary = unstable_cache(
 // ================================
 
 // --- 現在ログインユーザーのロール ---
+// 読み取りは admin client でバイパス (RLS で空行が返る事故を防ぐ)
 export async function getCurrentUserRole(): Promise<UserRole | null> {
-  const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const serverClient = await createServerSupabaseClient();
+  const { data: { user } } = await serverClient.auth.getUser();
   if (!user) return null;
-  const { data } = await supabase
+  const admin = getAdminSupabaseClient();
+  const { data } = await admin
     .from('user_roles')
     .select('role')
     .eq('user_id', user.id)
@@ -421,8 +423,9 @@ export async function upsertUserRole(userId: string, role: UserRole): Promise<vo
 }
 
 // --- ダッシュボードレイアウト取得 ---
+// 読み取りは admin client でバイパス (RLS で空行が返る事故を防ぐ。全員閲覧可の共有設定)
 export async function getDashboardLayout(): Promise<Widget[]> {
-  const supabase = await createServerSupabaseClient();
+  const supabase = getAdminSupabaseClient();
   const { data } = await supabase
     .from('dashboard_layout')
     .select('widgets')
