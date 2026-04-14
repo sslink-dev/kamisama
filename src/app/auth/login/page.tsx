@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { LoadingOverlay } from '@/components/layout/loading-overlay';
 import { KeyRound } from 'lucide-react';
 
 export default function LoginPage() {
@@ -53,6 +54,7 @@ function LoginForm() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
+      <LoadingOverlay show={status === 'submitting'} fullscreen message="ログイン中..." />
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-2 text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-blue-100">

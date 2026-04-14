@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { FileDropzone } from '@/components/import/file-dropzone';
 import { ImportPreview } from '@/components/import/import-preview';
 import { ImportProgress } from '@/components/import/import-progress';
+import { LoadingOverlay } from '@/components/layout/loading-overlay';
 import { Download, Upload, FileSpreadsheet } from 'lucide-react';
 import { parseCsv, validateHeaders, type ParseResult } from '@/lib/csv/parser';
 import { importToSupabase, type ImportResult } from '@/lib/csv/importer';
@@ -101,6 +102,21 @@ export default function ImportPage() {
   return (
     <>
       <Header title="データ管理" />
+      <LoadingOverlay
+        show={isImporting}
+        fullscreen
+        message={progressStep || 'インポート中...'}
+      />
+      <LoadingOverlay
+        show={isConverting}
+        fullscreen
+        message="Excel を変換中..."
+      />
+      <LoadingOverlay
+        show={isExporting}
+        fullscreen
+        message="エクスポート中..."
+      />
       <div className="p-6">
         <Tabs defaultValue="import">
           <TabsList>
