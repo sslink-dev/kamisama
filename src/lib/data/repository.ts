@@ -127,37 +127,37 @@ export async function getMetricsByStore(storeId: string): Promise<Metric[]> {
 }
 
 export async function getMonthlyTrends(filters?: StoreFilters): Promise<MonthlyTrend[]> {
-  let storeIdFilter: string[] | null = null;
-  if (filters && Object.keys(filters).length > 0) {
-    const stores = await getStores(filters);
-    storeIdFilter = stores.map(s => s.id);
-    if (storeIdFilter.length === 0) return [];
+  const supabase = await createServerSupabaseClient();
+
+  // フィルタなしの場合は事前集計ビューを使用（高速）
+  if (!filters || Object.keys(filters).length === 0) {
+    const { data } = await supabase
+      .from('v_monthly_trends')
+      .select('*')
+      .order('year_month');
+    return (data || []).map(d => ({
+      yearMonth: d.year_month as string,
+      totalReferrals: d.total_referrals as number,
+      totalBrokerage: d.total_brokerage as number,
+      avgReferralRate: Number(d.avg_referral_rate) || 0,
+      totalTargetReferrals: d.total_target_referrals as number,
+      storeCount: d.store_count as number,
+    }));
   }
 
-  const supabase = await createServerSupabaseClient();
+  // フィルタありの場合: 該当店舗のメトリクスを個別集計
+  const stores = await getStores(filters);
+  const storeIds = stores.map(s => s.id);
+  if (storeIds.length === 0) return [];
+
   const allMetrics: Metric[] = [];
-  if (storeIdFilter) {
-    for (let i = 0; i < storeIdFilter.length; i += 200) {
-      const batch = storeIdFilter.slice(i, i + 200);
-      const { data } = await supabase
-        .from('monthly_metrics')
-        .select('*')
-        .in('store_id', batch);
-      if (data) allMetrics.push(...data.map(toMetric));
-    }
-  } else {
-    let from = 0;
-    const pageSize = 1000;
-    while (true) {
-      const { data } = await supabase
-        .from('monthly_metrics')
-        .select('*')
-        .range(from, from + pageSize - 1);
-      if (!data || data.length === 0) break;
-      allMetrics.push(...data.map(toMetric));
-      if (data.length < pageSize) break;
-      from += pageSize;
-    }
+  for (let i = 0; i < storeIds.length; i += 200) {
+    const batch = storeIds.slice(i, i + 200);
+    const { data } = await supabase
+      .from('monthly_metrics')
+      .select('*')
+      .in('store_id', batch);
+    if (data) allMetrics.push(...data.map(toMetric));
   }
 
   const monthMap = new Map<string, { refs: number; brk: number; rates: number[]; targets: number; count: number }>();
@@ -188,71 +188,49 @@ export async function getMonthlyTrends(filters?: StoreFilters): Promise<MonthlyT
 // --- Agency Summaries ---
 export async function getAgencySummaries(yearMonth?: string): Promise<AgencySummary[]> {
   const supabase = await createServerSupabaseClient();
-  const agencies = await getAgencies();
-  const stores: Record<string, unknown>[] = [];
-  let stFrom = 0;
-  while (true) {
-    const { data } = await supabase.from('stores').select('id, agency_id, is_ng').range(stFrom, stFrom + 999);
-    if (!data || data.length === 0) break;
-    stores.push(...data);
-    if (data.length < 1000) break;
-    stFrom += 1000;
+
+  if (yearMonth) {
+    // 月指定あり: RPC関数を使用（DBで集計）
+    const { data } = await supabase.rpc('get_agency_summaries_by_month', { p_year_month: yearMonth });
+    return (data || []).map((d: Record<string, unknown>) => ({
+      agencyId: d.agency_id as string,
+      agencyName: d.agency_name as string,
+      storeCount: d.store_count as number,
+      activeStoreCount: d.active_store_count as number,
+      ngStoreCount: d.ng_store_count as number,
+      totalReferrals: d.total_referrals as number,
+      totalBrokerage: d.total_brokerage as number,
+      avgReferralRate: Number(d.avg_referral_rate) || 0,
+      totalTargetReferrals: d.total_target_referrals as number,
+      targetAchievementRate: Number(d.target_achievement_rate) || 0,
+    }));
   }
 
-  const allMetrics: Record<string, unknown>[] = [];
-  let from = 0;
-  const pageSize = 1000;
-  while (true) {
-    let q = supabase.from('monthly_metrics').select('store_id, referrals, brokerage, target_referrals');
-    if (yearMonth) q = q.eq('year_month', yearMonth);
-    const { data } = await q.range(from, from + pageSize - 1);
-    if (!data || data.length === 0) break;
-    allMetrics.push(...data);
-    if (data.length < pageSize) break;
-    from += pageSize;
-  }
-
-  return agencies.map(agency => {
-    const agencyStores = stores.filter((s: Record<string, unknown>) => s.agency_id === agency.id);
-    const storeIds = new Set(agencyStores.map((s: Record<string, unknown>) => s.id as string));
-
-    const relevantMetrics = allMetrics.filter(m => storeIds.has(m.store_id as string));
-    const totalRefs = relevantMetrics.reduce((s, m) => s + (m.referrals as number), 0);
-    const totalBrk = relevantMetrics.reduce((s, m) => s + (m.brokerage as number), 0);
-    const totalTarget = relevantMetrics.reduce((s, m) => s + (m.target_referrals as number), 0);
-
-    return {
-      agencyId: agency.id,
-      agencyName: agency.name,
-      storeCount: agencyStores.length,
-      activeStoreCount: agencyStores.filter((s: Record<string, unknown>) => !s.is_ng).length,
-      ngStoreCount: agencyStores.filter((s: Record<string, unknown>) => s.is_ng).length,
-      totalReferrals: totalRefs,
-      totalBrokerage: totalBrk,
-      avgReferralRate: totalBrk > 0 ? Math.round((totalRefs / totalBrk) * 10000) / 10000 : 0,
-      totalTargetReferrals: totalTarget,
-      targetAchievementRate: totalTarget > 0 ? Math.round((totalRefs / totalTarget) * 10000) / 10000 : 0,
-    };
-  });
+  // 月指定なし: 全期間集計ビューを使用
+  const { data } = await supabase.from('v_agency_totals').select('*');
+  return (data || []).map((d: Record<string, unknown>) => ({
+    agencyId: d.agency_id as string,
+    agencyName: d.agency_name as string,
+    storeCount: d.store_count as number,
+    activeStoreCount: d.active_store_count as number,
+    ngStoreCount: d.ng_store_count as number,
+    totalReferrals: d.total_referrals as number,
+    totalBrokerage: d.total_brokerage as number,
+    avgReferralRate: Number(d.avg_referral_rate) || 0,
+    totalTargetReferrals: d.total_target_referrals as number,
+    targetAchievementRate: Number(d.target_achievement_rate) || 0,
+  }));
 }
 
 // --- Utility ---
 export async function getAvailableMonths(): Promise<string[]> {
   const supabase = await createServerSupabaseClient();
-  const months = new Set<string>();
-  let from = 0;
-  const pageSize = 1000;
-  while (true) {
-    const { data } = await supabase
-      .from('monthly_metrics')
-      .select('year_month')
-      .range(from, from + pageSize - 1);
-    if (!data || data.length === 0) break;
-    data.forEach(d => months.add((d as Record<string, unknown>).year_month as string));
-    if (data.length < pageSize) break;
-    from += pageSize;
-  }
-  return [...months].sort();
+  // v_monthly_trends は year_month ユニーク集約なのでそのまま取得
+  const { data } = await supabase
+    .from('v_monthly_trends')
+    .select('year_month')
+    .order('year_month');
+  return (data || []).map(d => (d as Record<string, unknown>).year_month as string);
 }
 
 async function getDistinctStoreColumn(column: string): Promise<string[]> {
@@ -312,28 +290,15 @@ export async function getCompanies(): Promise<{ id: string; name: string }[]> {
 
 export async function getKpiSummary(yearMonth: string) {
   const supabase = await createServerSupabaseClient();
-  const { data: metricsData } = await supabase
-    .from('monthly_metrics')
-    .select('referrals, brokerage, target_referrals')
-    .eq('year_month', yearMonth);
-
-  const metrics = metricsData || [];
-  const totalRefs = metrics.reduce((s, m) => s + (m.referrals as number), 0);
-  const totalBrk = metrics.reduce((s, m) => s + (m.brokerage as number), 0);
-  const totalTarget = metrics.reduce((s, m) => s + (m.target_referrals as number), 0);
-
-  const { count } = await supabase
-    .from('stores')
-    .select('*', { count: 'exact', head: true })
-    .eq('is_ng', false);
-
+  const { data } = await supabase.rpc('get_kpi_summary', { p_year_month: yearMonth });
+  const row = (data && data[0]) || {};
   return {
-    totalReferrals: totalRefs,
-    totalBrokerage: totalBrk,
-    referralRate: totalBrk > 0 ? Math.round((totalRefs / totalBrk) * 10000) / 10000 : 0,
-    targetAchievementRate: totalTarget > 0 ? Math.round((totalRefs / totalTarget) * 10000) / 10000 : 0,
-    totalTargetReferrals: totalTarget,
-    activeStoreCount: count || 0,
-    storesWithData: metrics.length,
+    totalReferrals: (row.total_referrals as number) || 0,
+    totalBrokerage: (row.total_brokerage as number) || 0,
+    referralRate: Number(row.referral_rate) || 0,
+    targetAchievementRate: Number(row.target_achievement_rate) || 0,
+    totalTargetReferrals: (row.total_target_referrals as number) || 0,
+    activeStoreCount: (row.active_store_count as number) || 0,
+    storesWithData: (row.stores_with_data as number) || 0,
   };
 }
