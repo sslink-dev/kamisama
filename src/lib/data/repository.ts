@@ -46,9 +46,7 @@ export async function getAgencies(): Promise<Agency[]> {
 }
 
 // --- Stores ---
-export async function getStores(filters?: StoreFilters): Promise<Store[]> {
-  let query = supabase.from('stores').select('*');
-
+function applyStoreFilters(query: ReturnType<typeof supabase.from>, filters?: StoreFilters) {
   if (filters?.agencyId) query = query.eq('agency_id', filters.agencyId);
   if (filters?.unit) query = query.eq('unit', filters.unit);
   if (filters?.rank) query = query.eq('rank', filters.rank);
@@ -58,9 +56,23 @@ export async function getStores(filters?: StoreFilters): Promise<Store[]> {
     const q = `%${filters.search}%`;
     query = query.or(`name.ilike.${q},code.ilike.${q},company_name.ilike.${q}`);
   }
+  return query;
+}
 
-  const { data } = await query.order('number');
-  return (data || []).map(toStore);
+export async function getStores(filters?: StoreFilters): Promise<Store[]> {
+  const allData: Record<string, unknown>[] = [];
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    let query = supabase.from('stores').select('*');
+    query = applyStoreFilters(query, filters);
+    const { data } = await query.order('number').range(from, from + pageSize - 1);
+    if (!data || data.length === 0) break;
+    allData.push(...data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return allData.map(toStore);
 }
 
 export async function getStoreById(id: string): Promise<Store | undefined> {
@@ -170,8 +182,15 @@ export async function getMonthlyTrends(filters?: StoreFilters): Promise<MonthlyT
 // --- Agency Summaries ---
 export async function getAgencySummaries(yearMonth?: string): Promise<AgencySummary[]> {
   const agencies = await getAgencies();
-  const { data: storesData } = await supabase.from('stores').select('id, agency_id, is_ng');
-  const stores = storesData || [];
+  const stores: Record<string, unknown>[] = [];
+  let stFrom = 0;
+  while (true) {
+    const { data } = await supabase.from('stores').select('id, agency_id, is_ng').range(stFrom, stFrom + 999);
+    if (!data || data.length === 0) break;
+    stores.push(...data);
+    if (data.length < 1000) break;
+    stFrom += 1000;
+  }
 
   // Get metrics
   let metricsQuery = supabase.from('monthly_metrics').select('store_id, referrals, brokerage, referral_rate, target_referrals');
@@ -219,12 +238,20 @@ export async function getAgencySummaries(yearMonth?: string): Promise<AgencySumm
 
 // --- Utility ---
 export async function getAvailableMonths(): Promise<string[]> {
-  const { data } = await supabase
-    .from('monthly_metrics')
-    .select('year_month')
-    .order('year_month');
-  if (!data) return [];
-  return [...new Set(data.map((d: Record<string, unknown>) => d.year_month as string))];
+  const months = new Set<string>();
+  let from = 0;
+  const pageSize = 5000;
+  while (true) {
+    const { data } = await supabase
+      .from('monthly_metrics')
+      .select('year_month')
+      .range(from, from + pageSize - 1);
+    if (!data || data.length === 0) break;
+    data.forEach(d => months.add((d as Record<string, unknown>).year_month as string));
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return [...months].sort();
 }
 
 export async function getUnits(): Promise<string[]> {
