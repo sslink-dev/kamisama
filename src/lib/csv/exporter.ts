@@ -18,7 +18,7 @@ export async function exportAllData(): Promise<string> {
   // Fetch all metrics
   const allMetrics: Record<string, unknown>[] = [];
   let from = 0;
-  const pageSize = 5000;
+  const pageSize = 1000;
   while (true) {
     const { data } = await supabase
       .from('monthly_metrics')

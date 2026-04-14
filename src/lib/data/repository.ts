@@ -140,7 +140,7 @@ export async function getMonthlyTrends(filters?: StoreFilters): Promise<MonthlyT
   } else {
     // Fetch all - paginate since there are 52k+ rows
     let from = 0;
-    const pageSize = 5000;
+    const pageSize = 1000;
     while (true) {
       const { data } = await supabase
         .from('monthly_metrics')
@@ -198,7 +198,7 @@ export async function getAgencySummaries(yearMonth?: string): Promise<AgencySumm
 
   const allMetrics: Record<string, unknown>[] = [];
   let from = 0;
-  const pageSize = 5000;
+  const pageSize = 1000;
   while (true) {
     let q = supabase.from('monthly_metrics').select('store_id, referrals, brokerage, target_referrals');
     if (yearMonth) q = q.eq('year_month', yearMonth);
@@ -240,7 +240,7 @@ export async function getAgencySummaries(yearMonth?: string): Promise<AgencySumm
 export async function getAvailableMonths(): Promise<string[]> {
   const months = new Set<string>();
   let from = 0;
-  const pageSize = 5000;
+  const pageSize = 1000;
   while (true) {
     const { data } = await supabase
       .from('monthly_metrics')
