@@ -71,5 +71,9 @@ export interface StoreFilters {
   rank?: string;
   isNg?: boolean;
   companyFlag?: string;
+  ngReason?: string;
+  isPriority?: boolean;
+  isPriorityQ3?: boolean;
+  companyId?: string;
   search?: string;
 }

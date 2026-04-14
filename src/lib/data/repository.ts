@@ -46,12 +46,17 @@ export async function getAgencies(): Promise<Agency[]> {
 }
 
 // --- Stores ---
-function applyStoreFilters(query: ReturnType<typeof supabase.from>, filters?: StoreFilters) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyStoreFilters(query: any, filters?: StoreFilters): any {
   if (filters?.agencyId) query = query.eq('agency_id', filters.agencyId);
   if (filters?.unit) query = query.eq('unit', filters.unit);
   if (filters?.rank) query = query.eq('rank', filters.rank);
   if (filters?.isNg !== undefined) query = query.eq('is_ng', filters.isNg);
   if (filters?.companyFlag) query = query.eq('company_flag', filters.companyFlag);
+  if (filters?.ngReason) query = query.eq('ng_reason', filters.ngReason);
+  if (filters?.isPriority) query = query.eq('is_priority', true);
+  if (filters?.isPriorityQ3) query = query.eq('is_priority_q3', true);
+  if (filters?.companyId) query = query.eq('company_id', filters.companyId);
   if (filters?.search) {
     const q = `%${filters.search}%`;
     query = query.or(`name.ilike.${q},code.ilike.${q},company_name.ilike.${q}`);
@@ -254,28 +259,57 @@ export async function getAvailableMonths(): Promise<string[]> {
   return [...months].sort();
 }
 
+async function getDistinctStoreColumn(column: string): Promise<string[]> {
+  const values = new Set<string>();
+  let from = 0;
+  while (true) {
+    const { data } = await supabase
+      .from('stores')
+      .select(column)
+      .not(column, 'is', null)
+      .range(from, from + 999);
+    if (!data || data.length === 0) break;
+    data.forEach(d => {
+      const v = (d as unknown as Record<string, unknown>)[column] as string;
+      if (v) values.add(v);
+    });
+    if (data.length < 1000) break;
+    from += 1000;
+  }
+  return [...values].sort();
+}
+
 export async function getUnits(): Promise<string[]> {
-  const { data } = await supabase.from('stores').select('unit').not('unit', 'is', null);
-  if (!data) return [];
-  return [...new Set(data.map((d: Record<string, unknown>) => d.unit as string))];
+  return getDistinctStoreColumn('unit');
 }
 
 export async function getRanks(): Promise<string[]> {
-  const { data } = await supabase.from('stores').select('rank').not('rank', 'is', null);
-  if (!data) return [];
-  return [...new Set(data.map((d: Record<string, unknown>) => d.rank as string))];
+  return getDistinctStoreColumn('rank');
 }
 
 export async function getCompanyFlags(): Promise<string[]> {
-  const { data } = await supabase.from('stores').select('company_flag').not('company_flag', 'is', null);
-  if (!data) return [];
-  return [...new Set(data.map((d: Record<string, unknown>) => d.company_flag as string))];
+  return getDistinctStoreColumn('company_flag');
 }
 
 export async function getNgReasons(): Promise<string[]> {
-  const { data } = await supabase.from('stores').select('ng_reason').not('ng_reason', 'is', null);
-  if (!data) return [];
-  return [...new Set(data.map((d: Record<string, unknown>) => d.ng_reason as string))];
+  return getDistinctStoreColumn('ng_reason');
+}
+
+export async function getCompanies(): Promise<{ id: string; name: string }[]> {
+  const all: { id: string; name: string }[] = [];
+  let from = 0;
+  while (true) {
+    const { data } = await supabase
+      .from('companies')
+      .select('id, name')
+      .order('name')
+      .range(from, from + 999);
+    if (!data || data.length === 0) break;
+    all.push(...(data as { id: string; name: string }[]));
+    if (data.length < 1000) break;
+    from += 1000;
+  }
+  return all;
 }
 
 export async function getKpiSummary(yearMonth: string) {
