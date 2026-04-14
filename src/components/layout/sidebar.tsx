@@ -9,6 +9,8 @@ import {
   AlertTriangle,
   Target,
   Upload,
+  LogOut,
+  User,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -21,17 +23,20 @@ const navItems = [
   { href: '/import', label: 'データ管理', icon: Upload },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  userEmail?: string;
+}
+
+export function Sidebar({ userEmail }: SidebarProps) {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r bg-white">
+    <aside className="fixed left-0 top-0 z-40 flex h-screen w-64 flex-col border-r bg-white">
       <div className="flex h-16 items-center border-b px-6">
-        <h1 className="text-xl font-bold text-gray-900">
-          神様CRM
-        </h1>
+        <h1 className="text-xl font-bold text-gray-900">神様CRM</h1>
       </div>
-      <nav className="space-y-1 p-4">
+
+      <nav className="flex-1 space-y-1 overflow-y-auto p-4">
         {navItems.map(item => {
           const isActive = pathname.startsWith(item.href);
           return (
@@ -51,6 +56,26 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      {userEmail && (
+        <div className="border-t p-4">
+          <div className="mb-2 flex items-center gap-2 px-1 text-xs text-gray-500">
+            <User className="h-3.5 w-3.5" />
+            <span className="truncate" title={userEmail}>
+              {userEmail}
+            </span>
+          </div>
+          <form action="/auth/logout" method="post">
+            <button
+              type="submit"
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-red-50 hover:text-red-700"
+            >
+              <LogOut className="h-4 w-4" />
+              ログアウト
+            </button>
+          </form>
+        </div>
+      )}
     </aside>
   );
 }

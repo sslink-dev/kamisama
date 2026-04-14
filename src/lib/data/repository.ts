@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase/client';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 import type {
   Agency, Store, Metric, StoreFilters,
   AgencySummary, MonthlyTrend, StoreWithMetrics,
@@ -41,6 +41,7 @@ function toMetric(row: Record<string, unknown>): Metric {
 
 // --- Agencies ---
 export async function getAgencies(): Promise<Agency[]> {
+  const supabase = await createServerSupabaseClient();
   const { data } = await supabase.from('agencies').select('*').order('name');
   return (data || []) as Agency[];
 }
@@ -65,6 +66,7 @@ function applyStoreFilters(query: any, filters?: StoreFilters): any {
 }
 
 export async function getStores(filters?: StoreFilters): Promise<Store[]> {
+  const supabase = await createServerSupabaseClient();
   const allData: Record<string, unknown>[] = [];
   let from = 0;
   const pageSize = 1000;
@@ -81,6 +83,7 @@ export async function getStores(filters?: StoreFilters): Promise<Store[]> {
 }
 
 export async function getStoreById(id: string): Promise<Store | undefined> {
+  const supabase = await createServerSupabaseClient();
   const { data } = await supabase.from('stores').select('*').eq('id', id).single();
   return data ? toStore(data) : undefined;
 }
@@ -92,8 +95,8 @@ export async function getStoresWithLatestMetrics(
   const stores = await getStores(filters);
   if (!yearMonth || stores.length === 0) return stores;
 
+  const supabase = await createServerSupabaseClient();
   const storeIds = stores.map(s => s.id);
-  // Fetch metrics in batches (Supabase has URL length limits)
   const allMetrics: Metric[] = [];
   for (let i = 0; i < storeIds.length; i += 200) {
     const batch = storeIds.slice(i, i + 200);
@@ -114,6 +117,7 @@ export async function getStoresWithLatestMetrics(
 
 // --- Metrics ---
 export async function getMetricsByStore(storeId: string): Promise<Metric[]> {
+  const supabase = await createServerSupabaseClient();
   const { data } = await supabase
     .from('monthly_metrics')
     .select('*')
@@ -123,7 +127,6 @@ export async function getMetricsByStore(storeId: string): Promise<Metric[]> {
 }
 
 export async function getMonthlyTrends(filters?: StoreFilters): Promise<MonthlyTrend[]> {
-  // If filters, get filtered store IDs first
   let storeIdFilter: string[] | null = null;
   if (filters && Object.keys(filters).length > 0) {
     const stores = await getStores(filters);
@@ -131,8 +134,8 @@ export async function getMonthlyTrends(filters?: StoreFilters): Promise<MonthlyT
     if (storeIdFilter.length === 0) return [];
   }
 
-  // Fetch all metrics (or filtered)
-  let allMetrics: Metric[] = [];
+  const supabase = await createServerSupabaseClient();
+  const allMetrics: Metric[] = [];
   if (storeIdFilter) {
     for (let i = 0; i < storeIdFilter.length; i += 200) {
       const batch = storeIdFilter.slice(i, i + 200);
@@ -143,7 +146,6 @@ export async function getMonthlyTrends(filters?: StoreFilters): Promise<MonthlyT
       if (data) allMetrics.push(...data.map(toMetric));
     }
   } else {
-    // Fetch all - paginate since there are 52k+ rows
     let from = 0;
     const pageSize = 1000;
     while (true) {
@@ -158,7 +160,6 @@ export async function getMonthlyTrends(filters?: StoreFilters): Promise<MonthlyT
     }
   }
 
-  // Aggregate by month
   const monthMap = new Map<string, { refs: number; brk: number; rates: number[]; targets: number; count: number }>();
   allMetrics.forEach(m => {
     const entry = monthMap.get(m.yearMonth) || { refs: 0, brk: 0, rates: [], targets: 0, count: 0 };
@@ -186,6 +187,7 @@ export async function getMonthlyTrends(filters?: StoreFilters): Promise<MonthlyT
 
 // --- Agency Summaries ---
 export async function getAgencySummaries(yearMonth?: string): Promise<AgencySummary[]> {
+  const supabase = await createServerSupabaseClient();
   const agencies = await getAgencies();
   const stores: Record<string, unknown>[] = [];
   let stFrom = 0;
@@ -196,10 +198,6 @@ export async function getAgencySummaries(yearMonth?: string): Promise<AgencySumm
     if (data.length < 1000) break;
     stFrom += 1000;
   }
-
-  // Get metrics
-  let metricsQuery = supabase.from('monthly_metrics').select('store_id, referrals, brokerage, referral_rate, target_referrals');
-  if (yearMonth) metricsQuery = metricsQuery.eq('year_month', yearMonth);
 
   const allMetrics: Record<string, unknown>[] = [];
   let from = 0;
@@ -213,9 +211,6 @@ export async function getAgencySummaries(yearMonth?: string): Promise<AgencySumm
     if (data.length < pageSize) break;
     from += pageSize;
   }
-
-  // Build store->agency map
-  const storeAgencyMap = new Map(stores.map((s: Record<string, unknown>) => [s.id as string, s.agency_id as string]));
 
   return agencies.map(agency => {
     const agencyStores = stores.filter((s: Record<string, unknown>) => s.agency_id === agency.id);
@@ -243,6 +238,7 @@ export async function getAgencySummaries(yearMonth?: string): Promise<AgencySumm
 
 // --- Utility ---
 export async function getAvailableMonths(): Promise<string[]> {
+  const supabase = await createServerSupabaseClient();
   const months = new Set<string>();
   let from = 0;
   const pageSize = 1000;
@@ -260,6 +256,7 @@ export async function getAvailableMonths(): Promise<string[]> {
 }
 
 async function getDistinctStoreColumn(column: string): Promise<string[]> {
+  const supabase = await createServerSupabaseClient();
   const values = new Set<string>();
   let from = 0;
   while (true) {
@@ -296,6 +293,7 @@ export async function getNgReasons(): Promise<string[]> {
 }
 
 export async function getCompanies(): Promise<{ id: string; name: string }[]> {
+  const supabase = await createServerSupabaseClient();
   const all: { id: string; name: string }[] = [];
   let from = 0;
   while (true) {
@@ -313,6 +311,7 @@ export async function getCompanies(): Promise<{ id: string; name: string }[]> {
 }
 
 export async function getKpiSummary(yearMonth: string) {
+  const supabase = await createServerSupabaseClient();
   const { data: metricsData } = await supabase
     .from('monthly_metrics')
     .select('referrals, brokerage, target_referrals')
