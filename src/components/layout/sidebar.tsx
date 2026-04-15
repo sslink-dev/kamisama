@@ -14,6 +14,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { APP_VERSION } from '@/lib/version';
 
 const navItems = [
   { href: '/dashboard', label: 'ダッシュボード', icon: LayoutDashboard },
@@ -38,8 +39,11 @@ export function Sidebar({ userEmail, isAdmin }: SidebarProps) {
 
   return (
     <aside className="fixed left-0 top-0 z-40 flex h-screen w-64 flex-col border-r bg-white">
-      <div className="flex h-16 items-center border-b px-6">
+      <div className="flex h-16 items-center gap-2 border-b px-6">
         <h1 className="text-xl font-bold text-gray-900">神様CRM</h1>
+        <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+          {APP_VERSION}
+        </span>
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-4">
