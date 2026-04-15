@@ -2,8 +2,15 @@ import Papa from 'papaparse';
 import { supabase } from '@/lib/supabase/client';
 import { CSV_HEADERS } from './constants';
 
+// エクスポートは通電数も含める (インポート側は後方互換のため通電数を任意扱い)
+const EXPORT_HEADERS = [
+  ...CSV_HEADERS.slice(0, 14), // ...取次数まで
+  '通電数',
+  ...CSV_HEADERS.slice(14), // 仲介数 以降
+];
+
 export function generateEmptyTemplate(): string {
-  return Papa.unparse({ fields: [...CSV_HEADERS], data: [] });
+  return Papa.unparse({ fields: EXPORT_HEADERS, data: [] });
 }
 
 export async function exportAllData(): Promise<string> {
@@ -22,7 +29,7 @@ export async function exportAllData(): Promise<string> {
   while (true) {
     const { data } = await supabase
       .from('monthly_metrics')
-      .select('store_id, year_month, referrals, brokerage, referral_rate, target_referrals')
+      .select('store_id, year_month, referrals, connections, brokerage, referral_rate, target_referrals')
       .range(from, from + pageSize - 1);
     if (!data || data.length === 0) break;
     allMetrics.push(...data);
@@ -59,7 +66,7 @@ export async function exportAllData(): Promise<string> {
         store.ng_month || '',
         store.is_priority ? '1' : '0',
         store.is_priority_q3 ? '1' : '0',
-        '', '', '', '', '',
+        '', '', '', '', '', '',
       ]);
     } else {
       for (const m of storeMetrics) {
@@ -78,6 +85,7 @@ export async function exportAllData(): Promise<string> {
           store.is_priority_q3 ? '1' : '0',
           (m.year_month as string) || '',
           String(m.referrals ?? ''),
+          String(m.connections ?? ''),
           String(m.brokerage ?? ''),
           m.referral_rate != null ? String(m.referral_rate) : '',
           String(m.target_referrals ?? ''),
@@ -86,7 +94,7 @@ export async function exportAllData(): Promise<string> {
     }
   }
 
-  return Papa.unparse({ fields: [...CSV_HEADERS], data: rows });
+  return Papa.unparse({ fields: EXPORT_HEADERS, data: rows });
 }
 
 export function downloadCsv(csvString: string, filename: string) {

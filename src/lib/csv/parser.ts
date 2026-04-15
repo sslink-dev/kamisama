@@ -20,6 +20,7 @@ export interface ParsedMetric {
   storeCode: string;
   yearMonth: string;
   referrals: number;
+  connections: number;
   brokerage: number;
   referralRate: number | null;
   targetReferrals: number;
@@ -86,6 +87,7 @@ export function parseCsv(csvText: string): ParseResult {
         storeCode: code,
         yearMonth,
         referrals: Math.round(Number(row['取次数']) || 0),
+        connections: Math.round(Number(row['通電数']) || 0),
         brokerage: Math.round(Number(row['仲介数']) || 0),
         referralRate: row['取次率'] ? Number(row['取次率']) || null : null,
         targetReferrals: Math.round(Number(row['目標取次数']) || 0),

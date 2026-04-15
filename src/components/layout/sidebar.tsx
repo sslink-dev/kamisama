@@ -12,12 +12,18 @@ import {
   LogOut,
   User,
   ShieldCheck,
+  Handshake,
+  Zap,
+  CheckCircle2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { APP_VERSION } from '@/lib/version';
 
 const navItems = [
   { href: '/dashboard', label: 'ダッシュボード', icon: LayoutDashboard },
+  { href: '/referrals', label: '取次', icon: Handshake },
+  { href: '/connections', label: '通電', icon: Zap },
+  { href: '/brokerage', label: '成約', icon: CheckCircle2 },
   { href: '/stores', label: '店舗一覧', icon: Store },
   { href: '/agencies', label: '代理店分析', icon: Building2 },
   { href: '/ng', label: 'NG店舗管理', icon: AlertTriangle },

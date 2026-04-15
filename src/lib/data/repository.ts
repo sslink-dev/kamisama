@@ -54,6 +54,7 @@ function toMetric(row: Record<string, unknown>): Metric {
     storeId: row.store_id as string,
     yearMonth: row.year_month as string,
     referrals: row.referrals as number,
+    connections: (row.connections as number) ?? 0,
     brokerage: row.brokerage as number,
     referralRate: row.referral_rate as number | null,
     targetReferrals: row.target_referrals as number,
@@ -161,6 +162,7 @@ const getAllMonthlyTrendsCached = unstable_cache(
     return (data || []).map((d: Record<string, unknown>) => ({
       yearMonth: d.year_month as string,
       totalReferrals: d.total_referrals as number,
+      totalConnections: (d.total_connections as number) ?? 0,
       totalBrokerage: d.total_brokerage as number,
       avgReferralRate: Number(d.avg_referral_rate) || 0,
       totalTargetReferrals: d.total_target_referrals as number,
@@ -194,10 +196,11 @@ export async function getMonthlyTrends(filters?: StoreFilters): Promise<MonthlyT
     if (data) allMetrics.push(...data.map(toMetric));
   }
 
-  const monthMap = new Map<string, { refs: number; brk: number; rates: number[]; targets: number; count: number }>();
+  const monthMap = new Map<string, { refs: number; cons: number; brk: number; rates: number[]; targets: number; count: number }>();
   allMetrics.forEach(m => {
-    const entry = monthMap.get(m.yearMonth) || { refs: 0, brk: 0, rates: [], targets: 0, count: 0 };
+    const entry = monthMap.get(m.yearMonth) || { refs: 0, cons: 0, brk: 0, rates: [], targets: 0, count: 0 };
     entry.refs += m.referrals;
+    entry.cons += m.connections;
     entry.brk += m.brokerage;
     if (m.referralRate !== null) entry.rates.push(m.referralRate);
     entry.targets += m.targetReferrals;
@@ -210,6 +213,7 @@ export async function getMonthlyTrends(filters?: StoreFilters): Promise<MonthlyT
     .map(([yearMonth, data]) => ({
       yearMonth,
       totalReferrals: data.refs,
+      totalConnections: data.cons,
       totalBrokerage: data.brk,
       avgReferralRate: data.rates.length > 0
         ? Math.round((data.rates.reduce((a, b) => a + b, 0) / data.rates.length) * 10000) / 10000
@@ -231,6 +235,7 @@ const getAgencySummariesByMonthCached = unstable_cache(
       activeStoreCount: d.active_store_count as number,
       ngStoreCount: d.ng_store_count as number,
       totalReferrals: d.total_referrals as number,
+      totalConnections: (d.total_connections as number) ?? 0,
       totalBrokerage: d.total_brokerage as number,
       avgReferralRate: Number(d.avg_referral_rate) || 0,
       totalTargetReferrals: d.total_target_referrals as number,
@@ -252,6 +257,7 @@ const getAgencySummariesTotalCached = unstable_cache(
       activeStoreCount: d.active_store_count as number,
       ngStoreCount: d.ng_store_count as number,
       totalReferrals: d.total_referrals as number,
+      totalConnections: (d.total_connections as number) ?? 0,
       totalBrokerage: d.total_brokerage as number,
       avgReferralRate: Number(d.avg_referral_rate) || 0,
       totalTargetReferrals: d.total_target_referrals as number,
@@ -350,6 +356,7 @@ export const getKpiSummary = unstable_cache(
     const row = (data && data[0]) || {};
     return {
       totalReferrals: (row.total_referrals as number) || 0,
+      totalConnections: (row.total_connections as number) || 0,
       totalBrokerage: (row.total_brokerage as number) || 0,
       referralRate: Number(row.referral_rate) || 0,
       targetAchievementRate: Number(row.target_achievement_rate) || 0,

@@ -122,6 +122,7 @@ export async function importToSupabase(
     store_id: storeCodeToId.get(m.storeCode) || '',
     year_month: m.yearMonth,
     referrals: m.referrals,
+    connections: m.connections,
     brokerage: m.brokerage,
     referral_rate: m.referralRate,
     target_referrals: m.targetReferrals,

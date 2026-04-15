@@ -34,6 +34,9 @@ export interface Metric {
   storeId: string;
   yearMonth: string;
   referrals: number;
+  /** 通電数 (取次後に通電確認が取れた件数) */
+  connections: number;
+  /** 成約数 (契約成立件数)。DB カラム名は brokerage */
   brokerage: number;
   referralRate: number | null;
   targetReferrals: number;
@@ -50,6 +53,7 @@ export interface AgencySummary {
   activeStoreCount: number;
   ngStoreCount: number;
   totalReferrals: number;
+  totalConnections: number;
   totalBrokerage: number;
   avgReferralRate: number;
   totalTargetReferrals: number;
@@ -59,6 +63,7 @@ export interface AgencySummary {
 export interface MonthlyTrend {
   yearMonth: string;
   totalReferrals: number;
+  totalConnections: number;
   totalBrokerage: number;
   avgReferralRate: number;
   totalTargetReferrals: number;
@@ -110,6 +115,10 @@ export interface UserRoleRow {
   created_at: string;
   updated_at: string;
 }
+
+// === Funnel metric keys ===
+// 取次 → 通電 → 成約 のファネル各段の識別子
+export type FunnelMetric = 'referrals' | 'connections' | 'brokerage';
 
 export interface StoreFilters {
   agencyId?: string;

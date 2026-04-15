@@ -1,3 +1,4 @@
+// CSV の必須ヘッダ。通電数は任意 (既存 CSV との後方互換のため)
 export const CSV_HEADERS = [
   '店舗コード',
   '店舗名',
@@ -33,6 +34,7 @@ export type CsvRow = {
   '3Q重点': string;
   年月: string;
   取次数: string;
+  通電数?: string; // 任意: 通電数カラムがある場合のみ
   仲介数: string;
   取次率: string;
   目標取次数: string;

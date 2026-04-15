@@ -36,7 +36,7 @@ export const TOOL_DEFINITIONS = [
     type: 'function' as const,
     function: {
       name: 'get_kpi_summary',
-      description: '指定月の全社KPI（取次数・仲介数・取次率・目標達成率・有効店舗数）を返す。',
+      description: '指定月の全社KPI（取次数・通電数・成約数・取次率・目標達成率・有効店舗数）を返す。',
       parameters: {
         type: 'object',
         properties: {
@@ -50,7 +50,7 @@ export const TOOL_DEFINITIONS = [
     type: 'function' as const,
     function: {
       name: 'get_monthly_trends',
-      description: '月次推移データ（取次数・仲介数・取次率の月ごとの値）を返す。代理店・ユニットでフィルタ可。',
+      description: '月次推移データ（取次数・通電数・成約数・取次率の月ごとの値）を返す。代理店・ユニットでフィルタ可。',
       parameters: {
         type: 'object',
         properties: {
@@ -65,7 +65,7 @@ export const TOOL_DEFINITIONS = [
     type: 'function' as const,
     function: {
       name: 'get_agency_summaries',
-      description: '代理店別の集計（取次数・仲介数・店舗数・目標達成率等）を返す。ランキング作成にも使う。',
+      description: '代理店別の集計（取次数・通電数・成約数・店舗数・目標達成率等）を返す。ランキング作成にも使う。',
       parameters: {
         type: 'object',
         properties: {
@@ -73,7 +73,7 @@ export const TOOL_DEFINITIONS = [
           limit: { type: 'number', description: '上位 N 件のみ返す。指定なしで全件' },
           sort_by: {
             type: 'string',
-            enum: ['totalReferrals', 'totalBrokerage', 'targetAchievementRate', 'avgReferralRate', 'storeCount'],
+            enum: ['totalReferrals', 'totalConnections', 'totalBrokerage', 'targetAchievementRate', 'avgReferralRate', 'storeCount'],
             description: 'ソート対象の指標',
           },
         },
