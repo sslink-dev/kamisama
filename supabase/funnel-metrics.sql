@@ -13,7 +13,11 @@ ALTER TABLE monthly_metrics
 
 -- ============================
 -- 2. 依存するビュー / 関数を DROP
+-- (通常 VIEW として作られていた環境とマテリアライズド両方に対応)
 -- ============================
+DROP VIEW IF EXISTS v_monthly_trends CASCADE;
+DROP VIEW IF EXISTS v_agency_totals CASCADE;
+DROP VIEW IF EXISTS v_agency_monthly CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS v_monthly_trends CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS v_agency_totals CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS v_agency_monthly CASCADE;
