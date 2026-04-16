@@ -21,7 +21,7 @@ export default async function AuthenticatedLayout({
   return (
     <>
       <Sidebar userEmail={user.email ?? ''} isAdmin={isAdmin} />
-      <main className="ml-64 min-h-full">{children}</main>
+      <main className="min-h-full lg:ml-64">{children}</main>
       <ChatFloatButton />
     </>
   );
