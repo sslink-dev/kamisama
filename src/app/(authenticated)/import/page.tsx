@@ -14,6 +14,10 @@ import type { UnextParseResult } from '@/lib/excel/unext-parser';
 import type { HousemateParseResult } from '@/lib/excel/housemate-parser';
 import type { RensaParseResult } from '@/lib/excel/rensa-parser';
 import type { IerabuParseResult } from '@/lib/excel/ierabu-parser';
+import type { DualParseResult } from '@/lib/excel/dual-parser';
+import type { UmxParseResult } from '@/lib/excel/umx-parser';
+import type { ShelterParseResult } from '@/lib/excel/shelter-parser';
+import type { SmasapoParseResult } from '@/lib/excel/smasapo-parser';
 import { parseCsv, validateHeaders, type ParseResult } from '@/lib/csv/parser';
 import { importToSupabase, type ImportResult } from '@/lib/csv/importer';
 import { generateEmptyTemplate, exportAllData, downloadCsv } from '@/lib/csv/exporter';
@@ -120,12 +124,100 @@ export default function ImportPage() {
       const XLSX = await import('xlsx');
       const wb = XLSX.read(new Uint8Array(buffer), { type: 'array', bookSheets: true });
       const sheetNames: string[] = wb.SheetNames;
+      const isDual = sheetNames.includes('進捗状況') && !sheetNames.includes('取次数');
+      const isSmasapo = sheetNames.includes('取次数') && sheetNames.includes('受注数');
+      const isShelter = sheetNames.some(n => n.includes('取次数') && n.includes('週'));
+      const isUmx = sheetNames.includes('不動産リスト連携進捗');
       const isIerabu = sheetNames.includes('いえらぶMaster') || sheetNames.includes('リスト外店舗');
       const isRensa = sheetNames.includes('連携実績') || sheetNames.includes('エイブル実績_グローバル');
       const isHousemate = sheetNames.some(n => n.includes('ユニット別'));
       const isUnext = sheetNames.includes('元データ') || sheetNames.includes('データ貼付');
 
-      if (isIerabu) {
+      if (isDual) {
+        // --- DUAL ---
+        const parsed = await new Promise<DualParseResult>((resolve, reject) => {
+          const worker = new Worker(new URL('@/lib/excel/dual-worker', import.meta.url));
+          worker.onmessage = (e: MessageEvent<DualParseResult>) => { resolve(e.data); worker.terminate(); };
+          worker.onerror = (e) => { reject(new Error(e.message)); worker.terminate(); };
+          worker.postMessage({ buffer, fileName: file.name });
+        });
+        if (parsed.metrics.length === 0) { setUnextResult({ ok: false, error: 'DUAL: 有効なデータが見つかりませんでした' }); return; }
+        const res = await fetch('/api/import/agency', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agencyId: 'ag-dual', agencyName: 'DUAL', fileName: file.name,
+            storeCodePrefix: 'DUAL',
+            sheetsProcessed: ['進捗状況'],
+            metrics: parsed.metrics.map(m => ({ companyName: m.companyName, storeName: m.storeName, storeId: m.storeId, yearMonth: m.yearMonth, referrals: m.referrals, connections: m.connections, brokerage: 0 })),
+          }),
+        });
+        const data = await res.json();
+        setUnextResult({ ok: data.ok, sheetName: `DUAL (${parsed.yearMonth})`, totalRows: parsed.metrics.length, insertedCount: data.metricsCount, staffCount: 0, error: data.error, insertErrors: data.insertErrors });
+
+      } else if (isSmasapo) {
+        // --- スマサポ ---
+        const parsed = await new Promise<SmasapoParseResult>((resolve, reject) => {
+          const worker = new Worker(new URL('@/lib/excel/smasapo-worker', import.meta.url));
+          worker.onmessage = (e: MessageEvent<SmasapoParseResult>) => { resolve(e.data); worker.terminate(); };
+          worker.onerror = (e) => { reject(new Error(e.message)); worker.terminate(); };
+          worker.postMessage({ buffer, fileName: file.name });
+        });
+        if (parsed.metrics.length === 0) { setUnextResult({ ok: false, error: 'スマサポ: 有効なデータが見つかりませんでした' }); return; }
+        const res = await fetch('/api/import/agency', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agencyId: 'ag-smasapo', agencyName: 'スマサポ', fileName: file.name,
+            storeCodePrefix: 'SMS',
+            sheetsProcessed: parsed.sheetsProcessed,
+            metrics: parsed.metrics.map(m => ({ companyName: m.companyName, storeName: m.storeName, area: m.area, yearMonth: m.yearMonth, referrals: m.referrals, connections: 0, brokerage: m.brokerage })),
+          }),
+        });
+        const data = await res.json();
+        setUnextResult({ ok: data.ok, sheetName: `スマサポ (${parsed.sheetsProcessed.join(', ')})`, totalRows: parsed.metrics.length, insertedCount: data.metricsCount, staffCount: 0, error: data.error, insertErrors: data.insertErrors });
+
+      } else if (isShelter) {
+        // --- Shelter ---
+        const parsed = await new Promise<ShelterParseResult>((resolve, reject) => {
+          const worker = new Worker(new URL('@/lib/excel/shelter-worker', import.meta.url));
+          worker.onmessage = (e: MessageEvent<ShelterParseResult>) => { resolve(e.data); worker.terminate(); };
+          worker.onerror = (e) => { reject(new Error(e.message)); worker.terminate(); };
+          worker.postMessage(buffer, [buffer]);
+        });
+        if (parsed.metrics.length === 0) { setUnextResult({ ok: false, error: 'Shelter: 有効なデータが見つかりませんでした' }); return; }
+        const res = await fetch('/api/import/agency', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agencyId: 'ag-shelter', agencyName: 'Shelter', fileName: file.name,
+            storeCodePrefix: 'SHL',
+            sheetsProcessed: parsed.sheetsProcessed,
+            metrics: parsed.metrics.map(m => ({ companyName: m.companyName, storeName: m.storeName, area: m.area, yearMonth: m.yearMonth, referrals: m.referrals, connections: m.connections, brokerage: m.brokerage })),
+          }),
+        });
+        const data = await res.json();
+        setUnextResult({ ok: data.ok, sheetName: `Shelter (${parsed.sheetsProcessed.join(', ')})`, totalRows: parsed.metrics.length, insertedCount: data.metricsCount, staffCount: 0, error: data.error, insertErrors: data.insertErrors });
+
+      } else if (isUmx) {
+        // --- UMX ---
+        const parsed = await new Promise<UmxParseResult>((resolve, reject) => {
+          const worker = new Worker(new URL('@/lib/excel/umx-worker', import.meta.url));
+          worker.onmessage = (e: MessageEvent<UmxParseResult>) => { resolve(e.data); worker.terminate(); };
+          worker.onerror = (e) => { reject(new Error(e.message)); worker.terminate(); };
+          worker.postMessage(buffer, [buffer]);
+        });
+        if (parsed.metrics.length === 0) { setUnextResult({ ok: false, error: 'UMX: 有効なデータが見つかりませんでした' }); return; }
+        const res = await fetch('/api/import/agency', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agencyId: 'ag-umx', agencyName: 'UMX', fileName: file.name,
+            storeCodePrefix: 'UMX',
+            sheetsProcessed: ['不動産リスト連携進捗'],
+            metrics: parsed.metrics.map(m => ({ companyName: m.companyName, storeName: m.storeName, yearMonth: m.yearMonth, referrals: m.referrals, connections: 0, brokerage: 0 })),
+          }),
+        });
+        const data = await res.json();
+        setUnextResult({ ok: data.ok, sheetName: 'UMX (不動産リスト連携進捗)', totalRows: parsed.metrics.length, insertedCount: data.metricsCount, staffCount: 0, error: data.error, insertErrors: data.insertErrors });
+
+      } else if (isIerabu) {
         // --- いえらぶ ---
         const parsed = await new Promise<IerabuParseResult>((resolve, reject) => {
           const worker = new Worker(new URL('@/lib/excel/ierabu-worker', import.meta.url));
@@ -351,19 +443,15 @@ export default function ImportPage() {
                 <p className="text-sm text-gray-500">
                   代理店の Excel ファイルをドロップしてください。フォーマットを自動判別して取り込みます。
                 </p>
-                <div className="grid grid-cols-1 gap-2 text-xs text-gray-500 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded border p-2">
-                    <span className="font-medium text-blue-700">U-NEXT</span>: 「元データ」シートから取次・通電・成約を抽出
-                  </div>
-                  <div className="rounded border p-2">
-                    <span className="font-medium text-green-700">ハウスメイト</span>: 年間シートから店舗別月次取次数を抽出
-                  </div>
-                  <div className="rounded border p-2">
-                    <span className="font-medium text-amber-700">レンサ</span>: 連携実績 + エイブル実績から取次数を抽出
-                  </div>
-                  <div className="rounded border p-2">
-                    <span className="font-medium text-purple-700">いえらぶ</span>: Master + リスト外から○月データ列を抽出
-                  </div>
+                <div className="grid grid-cols-2 gap-1.5 text-[11px] text-gray-500 lg:grid-cols-4">
+                  <div className="rounded border p-1.5"><span className="font-medium text-blue-700">U-NEXT</span> 取次/通電/成約</div>
+                  <div className="rounded border p-1.5"><span className="font-medium text-green-700">ハウスメイト</span> 取次数</div>
+                  <div className="rounded border p-1.5"><span className="font-medium text-amber-700">レンサ</span> 取次数</div>
+                  <div className="rounded border p-1.5"><span className="font-medium text-purple-700">いえらぶ</span> 取次数</div>
+                  <div className="rounded border p-1.5"><span className="font-medium text-rose-700">UMX</span> 送客数=取次</div>
+                  <div className="rounded border p-1.5"><span className="font-medium text-cyan-700">Shelter</span> 取次/通電/成約</div>
+                  <div className="rounded border p-1.5"><span className="font-medium text-orange-700">スマサポ</span> 取次/成約+前年</div>
+                  <div className="rounded border p-1.5"><span className="font-medium text-indigo-700">DUAL</span> 取次/通電/有効</div>
                 </div>
                 <FileDropzone
                   accept=".xlsx,.xls"
