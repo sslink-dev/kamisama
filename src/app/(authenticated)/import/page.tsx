@@ -125,7 +125,8 @@ export default function ImportPage() {
 
       // シート名を先読みして代理店フォーマットを判別
       const XLSX = await import('xlsx');
-      const wb = XLSX.read(new Uint8Array(buffer), { type: 'array', bookSheets: true });
+      // sheetRows:2 でシート名+ヘッダ行だけ読む (bookSheets だと Sheets が空で header 判別不可)
+      const wb = XLSX.read(new Uint8Array(buffer), { type: 'array', sheetRows: 2 });
       const sheetNames: string[] = wb.SheetNames;
       const isLastmile = sheetNames.includes('LOM') || sheetNames.includes('noiatto');
       // ベンダー/エフプレインは単一シート → ヘッダ行で判別
