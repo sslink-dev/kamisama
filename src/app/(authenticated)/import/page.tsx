@@ -111,7 +111,7 @@ export default function ImportPage() {
     setUnextImporting(true);
 
     try {
-      // ① クライアント側で Excel をパース (Vercel 4.5MB 制限回避)
+      // ① クライアント側で Excel をパース
       const buffer = await file.arrayBuffer();
       const parsed = parseUnextExcel(buffer);
 
@@ -124,22 +124,52 @@ export default function ImportPage() {
         return;
       }
 
-      // ② パース結果の JSON だけをサーバーに送信
-      const res = await fetch('/api/import/unext', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileName: file.name,
-          sheetName: parsed.sheetName,
-          transactions: parsed.transactions,
-          totalRows: parsed.totalRows,
-        }),
-      });
-      const data = await res.json();
-      if (parsed.errors.length > 0) {
-        data.parseErrors = parsed.errors.slice(0, 20);
+      // ② 3000件ずつ分割送信 (Vercel 4.5MB ボディ制限回避)
+      const CHUNK = 3000;
+      const all = parsed.transactions;
+      const batchId = `unext_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+      let totalInserted = 0;
+      let staffCount = 0;
+      const allErrors: string[] = [];
+
+      for (let i = 0; i < all.length; i += CHUNK) {
+        const chunk = all.slice(i, i + CHUNK);
+        const isFirst = i === 0;
+        const isLast = i + CHUNK >= all.length;
+
+        const res = await fetch('/api/import/unext', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            batchId,
+            fileName: file.name,
+            sheetName: parsed.sheetName,
+            transactions: chunk,
+            totalRows: parsed.totalRows,
+            isFirst,
+            isLast,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setUnextResult({ ok: false, error: data.error || `チャンク ${i} でエラー` });
+          return;
+        }
+        totalInserted += data.insertedCount || 0;
+        staffCount = data.staffCount || staffCount;
+        if (data.insertErrors) allErrors.push(...data.insertErrors);
       }
-      setUnextResult(data);
+
+      setUnextResult({
+        ok: true,
+        batchId,
+        sheetName: parsed.sheetName,
+        totalRows: parsed.totalRows,
+        insertedCount: totalInserted,
+        staffCount,
+        parseErrors: parsed.errors.slice(0, 20),
+        insertErrors: allErrors.length > 0 ? allErrors : undefined,
+      });
     } catch (e) {
       setUnextResult({ ok: false, error: e instanceof Error ? e.message : '通信エラー' });
     } finally {
