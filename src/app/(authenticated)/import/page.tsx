@@ -11,6 +11,7 @@ import { ImportProgress } from '@/components/import/import-progress';
 import { LoadingOverlay } from '@/components/layout/loading-overlay';
 import { Download, Upload, FileSpreadsheet, Zap } from 'lucide-react';
 import type { UnextParseResult } from '@/lib/excel/unext-parser';
+import type { HousemateParseResult } from '@/lib/excel/housemate-parser';
 import { parseCsv, validateHeaders, type ParseResult } from '@/lib/csv/parser';
 import { importToSupabase, type ImportResult } from '@/lib/csv/importer';
 import { generateEmptyTemplate, exportAllData, downloadCsv } from '@/lib/csv/exporter';
@@ -104,85 +105,106 @@ export default function ImportPage() {
     reader.readAsArrayBuffer(file);
   }, []);
 
-  // --- U-NEXT Excel Import ---
+  // --- Agency Excel Import (U-NEXT / ハウスメイト 自動判別) ---
   const handleUnextFile = useCallback(async (file: File) => {
     setUnextResult(null);
     setUnextFileName(file.name);
     setUnextImporting(true);
 
     try {
-      // ① Web Worker で Excel をパース (メインスレッドをブロックしない)
       const buffer = await file.arrayBuffer();
-      const parsed = await new Promise<UnextParseResult>((resolve, reject) => {
-        const worker = new Worker(
-          new URL('@/lib/excel/unext-worker', import.meta.url)
-        );
-        worker.onmessage = (e: MessageEvent<UnextParseResult>) => {
-          resolve(e.data);
-          worker.terminate();
-        };
-        worker.onerror = (e) => {
-          reject(new Error(e.message || 'Worker error'));
-          worker.terminate();
-        };
-        worker.postMessage(buffer, [buffer]);
-      });
 
-      if (parsed.transactions.length === 0) {
-        setUnextResult({
-          ok: false,
-          error: '有効なデータが見つかりませんでした',
-          parseErrors: parsed.errors.slice(0, 20),
+      // シート名を先読みして代理店フォーマットを判別
+      const XLSX = await import('xlsx');
+      const wb = XLSX.read(new Uint8Array(buffer), { type: 'array', bookSheets: true });
+      const sheetNames: string[] = wb.SheetNames;
+      const isHousemate = sheetNames.some(n => n.includes('ユニット別'));
+      const isUnext = sheetNames.includes('元データ') || sheetNames.includes('データ貼付');
+
+      if (isHousemate) {
+        // --- ハウスメイト ---
+        const parsed = await new Promise<HousemateParseResult>((resolve, reject) => {
+          const worker = new Worker(new URL('@/lib/excel/housemate-worker', import.meta.url));
+          worker.onmessage = (e: MessageEvent<HousemateParseResult>) => { resolve(e.data); worker.terminate(); };
+          worker.onerror = (e) => { reject(new Error(e.message || 'Worker error')); worker.terminate(); };
+          worker.postMessage(buffer, [buffer]);
         });
-        return;
-      }
 
-      // ② 3000件ずつ分割送信 (Vercel 4.5MB ボディ制限回避)
-      const CHUNK = 3000;
-      const all = parsed.transactions;
-      const batchId = `unext_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-      let totalInserted = 0;
-      let staffCount = 0;
-      const allErrors: string[] = [];
+        if (parsed.metrics.length === 0) {
+          setUnextResult({ ok: false, error: '有効なデータが見つかりませんでした' });
+          return;
+        }
 
-      for (let i = 0; i < all.length; i += CHUNK) {
-        const chunk = all.slice(i, i + CHUNK);
-        const isFirst = i === 0;
-        const isLast = i + CHUNK >= all.length;
-
-        const res = await fetch('/api/import/unext', {
+        const res = await fetch('/api/import/housemate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            batchId,
             fileName: file.name,
-            sheetName: parsed.sheetName,
-            transactions: chunk,
-            totalRows: parsed.totalRows,
-            isFirst,
-            isLast,
+            metrics: parsed.metrics,
+            sheetsProcessed: parsed.sheetsProcessed,
+            storeCount: parsed.storeCount,
           }),
         });
         const data = await res.json();
-        if (!res.ok) {
-          setUnextResult({ ok: false, error: data.error || `チャンク ${i} でエラー` });
+        setUnextResult({
+          ok: data.ok,
+          sheetName: `ハウスメイト (${parsed.sheetsProcessed.length}シート)`,
+          totalRows: parsed.metrics.length,
+          insertedCount: data.metricsCount,
+          staffCount: 0,
+          error: data.error,
+          insertErrors: data.insertErrors,
+        });
+
+      } else if (isUnext) {
+        // --- U-NEXT ---
+        const parsed = await new Promise<UnextParseResult>((resolve, reject) => {
+          const worker = new Worker(new URL('@/lib/excel/unext-worker', import.meta.url));
+          worker.onmessage = (e: MessageEvent<UnextParseResult>) => { resolve(e.data); worker.terminate(); };
+          worker.onerror = (e) => { reject(new Error(e.message || 'Worker error')); worker.terminate(); };
+          worker.postMessage(buffer, [buffer]);
+        });
+
+        if (parsed.transactions.length === 0) {
+          setUnextResult({ ok: false, error: '有効なデータが見つかりませんでした', parseErrors: parsed.errors.slice(0, 20) });
           return;
         }
-        totalInserted += data.insertedCount || 0;
-        staffCount = data.staffCount || staffCount;
-        if (data.insertErrors) allErrors.push(...data.insertErrors);
-      }
 
-      setUnextResult({
-        ok: true,
-        batchId,
-        sheetName: parsed.sheetName,
-        totalRows: parsed.totalRows,
-        insertedCount: totalInserted,
-        staffCount,
-        parseErrors: parsed.errors.slice(0, 20),
-        insertErrors: allErrors.length > 0 ? allErrors : undefined,
-      });
+        const CHUNK = 3000;
+        const all = parsed.transactions;
+        const batchId = `unext_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+        let totalInserted = 0;
+        let staffCount = 0;
+        const allErrors: string[] = [];
+
+        for (let i = 0; i < all.length; i += CHUNK) {
+          const chunk = all.slice(i, i + CHUNK);
+          const res = await fetch('/api/import/unext', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              batchId, fileName: file.name, sheetName: parsed.sheetName,
+              transactions: chunk, totalRows: parsed.totalRows,
+              isFirst: i === 0, isLast: i + CHUNK >= all.length,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) { setUnextResult({ ok: false, error: data.error || `チャンク ${i} でエラー` }); return; }
+          totalInserted += data.insertedCount || 0;
+          staffCount = data.staffCount || staffCount;
+          if (data.insertErrors) allErrors.push(...data.insertErrors);
+        }
+
+        setUnextResult({
+          ok: true, batchId, sheetName: `U-NEXT: ${parsed.sheetName}`,
+          totalRows: parsed.totalRows, insertedCount: totalInserted, staffCount,
+          parseErrors: parsed.errors.slice(0, 20),
+          insertErrors: allErrors.length > 0 ? allErrors : undefined,
+        });
+
+      } else {
+        setUnextResult({ ok: false, error: '対応する代理店フォーマットが見つかりませんでした。U-NEXT（「元データ」シート）またはハウスメイト（「ユニット別」シート）の Excel を選択してください。' });
+      }
     } catch (e) {
       setUnextResult({ ok: false, error: e instanceof Error ? e.message : '通信エラー' });
     } finally {
@@ -209,7 +231,7 @@ export default function ImportPage() {
       <LoadingOverlay
         show={unextImporting}
         fullscreen
-        message="U-NEXT Excel を解析・取込中..."
+        message="代理店 Excel を解析・取込中..."
       />
       <LoadingOverlay
         show={isImporting}
@@ -227,11 +249,11 @@ export default function ImportPage() {
         message="エクスポート中..."
       />
       <div className="p-6">
-        <Tabs defaultValue="unext">
+        <Tabs defaultValue="agency">
           <TabsList>
-            <TabsTrigger value="unext">
+            <TabsTrigger value="agency">
               <Zap className="mr-2 h-4 w-4" />
-              U-NEXT取込
+              代理店Excel取込
             </TabsTrigger>
             <TabsTrigger value="import">
               <Upload className="mr-2 h-4 w-4" />
@@ -247,21 +269,28 @@ export default function ImportPage() {
             </TabsTrigger>
           </TabsList>
 
-          {/* U-NEXT Excel Import Tab */}
-          <TabsContent value="unext" className="space-y-4">
+          {/* Agency Excel Import Tab */}
+          <TabsContent value="agency" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">U-NEXT 週次報告 Excel 取込</CardTitle>
+                <CardTitle className="text-base">代理店 Excel 取込</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <p className="text-sm text-gray-500">
-                  U-NEXT 週次報告 Excel（例: 【UNLP】NTT東日本エリア週次報告...xlsx）をドロップしてください。
-                  「元データ」シートから取次・通電・成約データと担当者情報を自動抽出します。
+                  代理店の Excel ファイルをドロップしてください。フォーマットを自動判別して取り込みます。
                 </p>
+                <div className="grid grid-cols-1 gap-2 text-xs text-gray-500 sm:grid-cols-2">
+                  <div className="rounded border p-2">
+                    <span className="font-medium text-blue-700">U-NEXT</span>: 「元データ」シートから取次・通電・成約・担当者を抽出
+                  </div>
+                  <div className="rounded border p-2">
+                    <span className="font-medium text-green-700">ハウスメイト</span>: 年間シートから店舗別月次取次数を抽出
+                  </div>
+                </div>
                 <FileDropzone
                   accept=".xlsx,.xls"
-                  label="U-NEXT Excel をドラッグ&ドロップ"
-                  description="または クリックしてファイルを選択 (.xlsx)"
+                  label="代理店 Excel をドラッグ&ドロップ"
+                  description="U-NEXT / ハウスメイト を自動判別 (.xlsx)"
                   onFile={handleUnextFile}
                 />
 
