@@ -28,7 +28,7 @@ const navItems = [
   { href: '/connections', label: '通電', icon: Zap },
   { href: '/brokerage', label: '成約', icon: CheckCircle2 },
   { href: '/stores', label: '店舗一覧', icon: Store },
-  { href: '/agencies', label: '代理店分析', icon: Building2 },
+  { href: '/agencies', label: '企業分析', icon: Building2 },
   { href: '/ng', label: 'NG店舗管理', icon: AlertTriangle },
   { href: '/targets', label: '目標管理', icon: Target },
   { href: '/import', label: 'データ管理', icon: Upload },
