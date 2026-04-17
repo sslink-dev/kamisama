@@ -131,13 +131,15 @@ export async function POST(req: NextRequest) {
 
 /**
  * DB 上の referral_transactions を集計して
- * agencies / stores / monthly_metrics を同期する。
+ * companies / stores / monthly_metrics を同期する。
+ *
+ * 階層: agencies (U-NEXT) → companies (エイブル等) → stores → monthly_metrics
+ * referral_transactions.agency_name = 企業名 (エイブル/ピタットハウス等)
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function syncLegacyFromDb(db: any, batchId: string) {
-  // バッチの全トランザクションを取得 (ページネーション)
+async function syncLegacyFromDb(db: any, batchId: string, agencyId: string = 'ag-unext') {
   interface TxRow {
-    agency_name: string;
+    agency_name: string; // = 企業名
     store_code: string;
     store_name: string;
     department: string | null;
@@ -158,21 +160,23 @@ async function syncLegacyFromDb(db: any, batchId: string) {
     if (data.length < 1000) break;
     from += 1000;
   }
-
   if (allTxns.length === 0) return;
 
-  // --- agencies ---
-  const agencyNames = [...new Set(allTxns.map(t => t.agency_name))];
-  const { data: existingAgencies } = await db.from('agencies').select('id, name');
-  const agencyMap = new Map<string, string>(
-    (existingAgencies || []).map((a: { id: string; name: string }) => [a.name, a.id])
+  // --- companies (企業) ---
+  const companyNames = [...new Set(allTxns.map(t => t.agency_name))];
+  const { data: existingCompanies } = await db.from('companies').select('id, name');
+  const companyMap = new Map<string, string>(
+    (existingCompanies || []).map((c: { id: string; name: string }) => [c.name, c.id])
   );
-  let nextAgencyNum = (existingAgencies || []).length + 1;
-  for (const name of agencyNames) {
-    if (!agencyMap.has(name)) {
-      const id = `ag-${String(nextAgencyNum++).padStart(3, '0')}`;
-      await db.from('agencies').upsert({ id, name }, { onConflict: 'name' });
-      agencyMap.set(name, id);
+  let nextCompanyNum = (existingCompanies || []).length + 1;
+  for (const name of companyNames) {
+    if (!companyMap.has(name)) {
+      const id = `co-${String(nextCompanyNum++).padStart(4, '0')}`;
+      await db.from('companies').upsert(
+        { id, name, agency_id: agencyId },
+        { onConflict: 'name' }
+      );
+      companyMap.set(name, id);
     }
   }
 
@@ -194,9 +198,10 @@ async function syncLegacyFromDb(db: any, batchId: string) {
     }
     return {
       id, code: t.store_code, name: t.store_name,
-      agency_id: agencyMap.get(t.agency_name) || null,
-      agency_name: t.agency_name,
-      company_id: null, company_name: t.agency_name,
+      agency_id: agencyId,
+      agency_name: 'U-NEXT',
+      company_id: companyMap.get(t.agency_name) || null,
+      company_name: t.agency_name,
       unit: t.department, is_ng: false, is_priority: false, is_priority_q3: false,
     };
   });
