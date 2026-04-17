@@ -9,8 +9,7 @@ export async function TrendWidget({ widget }: { widget: Widget }) {
     ...(widget.config.unit ? { unit: widget.config.unit } : {}),
   };
   const hasFilters = Object.keys(filters).length > 0;
-  const trends = (await getMonthlyTrends(hasFilters ? filters : undefined))
-    .filter(t => t.yearMonth <= '2503');
+  const trends = await getMonthlyTrends(hasFilters ? filters : undefined);
 
   return (
     <Card className="border-0 shadow-none">

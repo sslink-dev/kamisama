@@ -53,7 +53,7 @@ export async function FunnelMetricPage({ metric, title, color, description }: Fu
   const latestValue = latestKpi ? latestKpi[access.kpi] : 0;
 
   // トレンド: 表示対象の月次推移
-  const historicalTrends = trends.filter(t => t.yearMonth <= '2503');
+  const historicalTrends = trends;
 
   // 前月比
   const prevMonthValue = historicalTrends.length >= 2

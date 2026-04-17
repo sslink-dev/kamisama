@@ -16,7 +16,7 @@ export function formatYearMonthLong(ym: string): string {
 }
 
 export function getLatestMonth(months: string[]): string {
-  return months.sort().reverse()[0] || '2503';
+  return months.sort().reverse()[0] || '2604';
 }
 
 export function formatPercent(rate: number | null): string {

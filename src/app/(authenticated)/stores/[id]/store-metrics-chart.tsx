@@ -21,7 +21,6 @@ interface StoreMetricsChartProps {
 
 export function StoreMetricsChart({ metrics }: StoreMetricsChartProps) {
   const chartData = metrics
-    .filter(m => m.yearMonth <= '2503')
     .map(m => ({
       label: formatYearMonth(m.yearMonth),
       referrals: m.referrals,

@@ -5,6 +5,7 @@ import { StoreClientFilters } from '@/components/stores/store-filters';
 import { ActiveFilterChips } from '@/components/stores/active-filter-chips';
 import {
   getStoresWithLatestMetrics,
+  getAvailableMonths,
   getAgencies,
   getUnits,
   getRanks,
@@ -44,9 +45,11 @@ export default async function StoresPage({
   };
 
   const [stores, agencies, units, ranks, flags, reasons, companies] = await Promise.all([
-    getStoresWithLatestMetrics(
-      Object.keys(filters).length > 0 ? filters : undefined,
-      '2503'
+    getAvailableMonths().then(ms => ms[ms.length - 1]).then(latest =>
+      getStoresWithLatestMetrics(
+        Object.keys(filters).length > 0 ? filters : undefined,
+        latest
+      )
     ),
     getAgencies(),
     getUnits(),

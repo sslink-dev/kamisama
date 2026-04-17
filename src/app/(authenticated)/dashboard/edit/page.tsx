@@ -23,7 +23,7 @@ export default async function DashboardEditPage() {
     getAgencies(),
     getUnits(),
   ]);
-  const historicalMonths = months.filter(m => m <= '2503');
+  const historicalMonths = months;
 
   return (
     <>

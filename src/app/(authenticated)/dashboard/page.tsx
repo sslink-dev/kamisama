@@ -18,7 +18,8 @@ export default async function DashboardPage() {
     getAvailableMonths(),
     isCurrentUserAdmin(),
   ]);
-  const historicalMonths = months.filter(m => m <= '2503');
+  // 全利用可能月を表示（以前は '2503' 以前に固定していたが、動的に全月を使う）
+  const historicalMonths = months;
 
   return (
     <>
