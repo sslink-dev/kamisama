@@ -6,7 +6,13 @@ import { parseUnextExcel, type ParsedTransaction } from '@/lib/excel/unext-parse
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
+/**
+ * クライアント側で Excel をパースした結果 (ParsedTransaction[]) を
+ * JSON で受け取り、DB に書き込む。
+ * Excel バイナリ自体はサーバーに送らない (Vercel 4.5MB 制限回避)。
+ */
 export async function POST(req: NextRequest) {
   // 認証 + admin チェック
   const supabase = await createServerSupabaseClient();
@@ -16,21 +22,21 @@ export async function POST(req: NextRequest) {
   const admin = await isCurrentUserAdmin();
   if (!admin) return NextResponse.json({ error: 'admin only' }, { status: 403 });
 
-  // multipart/form-data からファイル取得
-  const formData = await req.formData();
-  const file = formData.get('file') as File | null;
-  if (!file) return NextResponse.json({ error: 'ファイルが必要です' }, { status: 400 });
+  let body: {
+    fileName: string;
+    sheetName: string;
+    transactions: ParsedTransaction[];
+    totalRows: number;
+  };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'invalid json' }, { status: 400 });
+  }
 
-  const buffer = await file.arrayBuffer();
-
-  // Excel パース
-  const result = parseUnextExcel(buffer);
-  if (result.transactions.length === 0) {
-    return NextResponse.json({
-      error: '有効なデータが見つかりませんでした',
-      sheetName: result.sheetName,
-      parseErrors: result.errors.slice(0, 20),
-    }, { status: 400 });
+  const { transactions: txns, fileName, sheetName, totalRows } = body;
+  if (!txns || txns.length === 0) {
+    return NextResponse.json({ error: '有効なデータが見つかりませんでした' }, { status: 400 });
   }
 
   // admin client で DB 書込 (RLS bypass)
@@ -40,10 +46,10 @@ export async function POST(req: NextRequest) {
   // 1. バッチ登録
   const { error: batchError } = await db.from('import_batches').insert({
     id: batchId,
-    file_name: file.name,
+    file_name: fileName || 'unknown.xlsx',
     import_type: 'unext',
-    sheet_name: result.sheetName,
-    row_count: result.transactions.length,
+    sheet_name: sheetName,
+    row_count: txns.length,
     imported_by: user.id,
   });
   if (batchError) {
@@ -53,7 +59,6 @@ export async function POST(req: NextRequest) {
   // 2. トランザクション INSERT (500件ずつバッチ)
   let insertedCount = 0;
   const insertErrors: string[] = [];
-  const txns = result.transactions;
 
   for (let i = 0; i < txns.length; i += 500) {
     const chunk = txns.slice(i, i + 500).map((t, j) => ({
@@ -119,11 +124,10 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     batchId,
-    sheetName: result.sheetName,
-    totalRows: result.totalRows,
+    sheetName,
+    totalRows,
     insertedCount,
     staffCount: staffRows.length,
-    parseErrors: result.errors.slice(0, 20),
     insertErrors,
   });
 }

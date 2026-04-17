@@ -10,6 +10,7 @@ import { ImportPreview } from '@/components/import/import-preview';
 import { ImportProgress } from '@/components/import/import-progress';
 import { LoadingOverlay } from '@/components/layout/loading-overlay';
 import { Download, Upload, FileSpreadsheet, Zap } from 'lucide-react';
+import { parseUnextExcel } from '@/lib/excel/unext-parser';
 import { parseCsv, validateHeaders, type ParseResult } from '@/lib/csv/parser';
 import { importToSupabase, type ImportResult } from '@/lib/csv/importer';
 import { generateEmptyTemplate, exportAllData, downloadCsv } from '@/lib/csv/exporter';
@@ -110,10 +111,34 @@ export default function ImportPage() {
     setUnextImporting(true);
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await fetch('/api/import/unext', { method: 'POST', body: formData });
+      // ① クライアント側で Excel をパース (Vercel 4.5MB 制限回避)
+      const buffer = await file.arrayBuffer();
+      const parsed = parseUnextExcel(buffer);
+
+      if (parsed.transactions.length === 0) {
+        setUnextResult({
+          ok: false,
+          error: '有効なデータが見つかりませんでした',
+          parseErrors: parsed.errors.slice(0, 20),
+        });
+        return;
+      }
+
+      // ② パース結果の JSON だけをサーバーに送信
+      const res = await fetch('/api/import/unext', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: file.name,
+          sheetName: parsed.sheetName,
+          transactions: parsed.transactions,
+          totalRows: parsed.totalRows,
+        }),
+      });
       const data = await res.json();
+      if (parsed.errors.length > 0) {
+        data.parseErrors = parsed.errors.slice(0, 20);
+      }
       setUnextResult(data);
     } catch (e) {
       setUnextResult({ ok: false, error: e instanceof Error ? e.message : '通信エラー' });
