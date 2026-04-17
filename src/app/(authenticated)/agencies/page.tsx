@@ -29,7 +29,7 @@ export default async function AgenciesPage() {
           <CardHeader>
             <CardTitle className="text-base">代理店サマリ (全期間累計)</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -38,38 +38,45 @@ export default async function AgenciesPage() {
                   <TableHead className="text-right">アクティブ</TableHead>
                   <TableHead className="text-right">NG</TableHead>
                   <TableHead className="text-right">取次数</TableHead>
-                  <TableHead className="text-right">仲介数</TableHead>
-                  <TableHead className="text-right">取次率</TableHead>
+                  <TableHead className="text-right">通電数</TableHead>
+                  <TableHead className="text-right">成約数</TableHead>
+                  <TableHead className="text-right">成約率</TableHead>
                   <TableHead className="text-right">目標達成率</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {summaries.map(s => (
-                  <TableRow key={s.agencyId} className="hover:bg-gray-50">
-                    <TableCell className="font-medium">{s.agencyName}</TableCell>
-                    <TableCell className="text-right">{s.storeCount}</TableCell>
-                    <TableCell className="text-right">{s.activeStoreCount}</TableCell>
-                    <TableCell className="text-right">
-                      {s.ngStoreCount > 0 && (
-                        <Badge variant="outline" className="bg-red-50 text-red-700">
-                          {s.ngStoreCount}
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right font-medium">{formatNumber(s.totalReferrals)}</TableCell>
-                    <TableCell className="text-right">{formatNumber(s.totalBrokerage)}</TableCell>
-                    <TableCell className="text-right">{formatPercent(s.avgReferralRate)}</TableCell>
-                    <TableCell className="text-right">
-                      <span className={
-                        s.targetAchievementRate >= 1 ? 'text-green-600 font-medium' :
-                        s.targetAchievementRate >= 0.8 ? 'text-yellow-600' :
-                        s.targetAchievementRate > 0 ? 'text-red-600' : 'text-gray-400'
-                      }>
-                        {s.totalTargetReferrals > 0 ? formatPercent(s.targetAchievementRate) : '-'}
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {summaries.map(s => {
+                  const contractRate = s.totalReferrals > 0
+                    ? s.totalBrokerage / s.totalReferrals
+                    : 0;
+                  return (
+                    <TableRow key={s.agencyId} className="hover:bg-gray-50">
+                      <TableCell className="font-medium">{s.agencyName}</TableCell>
+                      <TableCell className="text-right">{s.storeCount}</TableCell>
+                      <TableCell className="text-right">{s.activeStoreCount}</TableCell>
+                      <TableCell className="text-right">
+                        {s.ngStoreCount > 0 && (
+                          <Badge variant="outline" className="bg-red-50 text-red-700">
+                            {s.ngStoreCount}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-medium">{formatNumber(s.totalReferrals)}</TableCell>
+                      <TableCell className="text-right">{formatNumber(s.totalConnections)}</TableCell>
+                      <TableCell className="text-right">{formatNumber(s.totalBrokerage)}</TableCell>
+                      <TableCell className="text-right">{formatPercent(contractRate)}</TableCell>
+                      <TableCell className="text-right">
+                        <span className={
+                          s.targetAchievementRate >= 1 ? 'text-green-600 font-medium' :
+                          s.targetAchievementRate >= 0.8 ? 'text-yellow-600' :
+                          s.targetAchievementRate > 0 ? 'text-red-600' : 'text-gray-400'
+                        }>
+                          {s.totalTargetReferrals > 0 ? formatPercent(s.targetAchievementRate) : '-'}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
