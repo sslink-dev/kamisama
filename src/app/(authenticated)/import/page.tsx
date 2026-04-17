@@ -10,7 +10,7 @@ import { ImportPreview } from '@/components/import/import-preview';
 import { ImportProgress } from '@/components/import/import-progress';
 import { LoadingOverlay } from '@/components/layout/loading-overlay';
 import { Download, Upload, FileSpreadsheet, Zap } from 'lucide-react';
-import { parseUnextExcel } from '@/lib/excel/unext-parser';
+import type { UnextParseResult } from '@/lib/excel/unext-parser';
 import { parseCsv, validateHeaders, type ParseResult } from '@/lib/csv/parser';
 import { importToSupabase, type ImportResult } from '@/lib/csv/importer';
 import { generateEmptyTemplate, exportAllData, downloadCsv } from '@/lib/csv/exporter';
@@ -111,9 +111,22 @@ export default function ImportPage() {
     setUnextImporting(true);
 
     try {
-      // ① クライアント側で Excel をパース
+      // ① Web Worker で Excel をパース (メインスレッドをブロックしない)
       const buffer = await file.arrayBuffer();
-      const parsed = parseUnextExcel(buffer);
+      const parsed = await new Promise<UnextParseResult>((resolve, reject) => {
+        const worker = new Worker(
+          new URL('@/lib/excel/unext-worker', import.meta.url)
+        );
+        worker.onmessage = (e: MessageEvent<UnextParseResult>) => {
+          resolve(e.data);
+          worker.terminate();
+        };
+        worker.onerror = (e) => {
+          reject(new Error(e.message || 'Worker error'));
+          worker.terminate();
+        };
+        worker.postMessage(buffer, [buffer]);
+      });
 
       if (parsed.transactions.length === 0) {
         setUnextResult({
