@@ -399,7 +399,12 @@ export default function ImportPage() {
                 {unextResult?.ok && (
                   <div className="space-y-3">
                     <div className="rounded-lg bg-green-50 p-4">
-                      <div className="text-sm font-medium text-green-800">取込完了</div>
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-medium text-green-800">✅ 取込完了 — ダッシュボードに即時反映済み</div>
+                        <a href="/dashboard" className="rounded bg-green-700 px-3 py-1 text-xs font-medium text-white hover:bg-green-800">
+                          ダッシュボードを見る →
+                        </a>
+                      </div>
                       <div className="mt-1 grid grid-cols-2 gap-2 text-sm text-green-700 sm:grid-cols-4">
                         <div>
                           <div className="text-xs text-green-600">シート</div>

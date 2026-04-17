@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getAdminSupabaseClient } from '@/lib/supabase/admin';
-import { isCurrentUserAdmin } from '@/lib/data/repository';
+import { isCurrentUserAdmin, refreshMaterializedViews } from '@/lib/data/repository';
 import type { IerabuMetric } from '@/lib/excel/ierabu-parser';
 
 export const runtime = 'nodejs';
@@ -52,28 +52,26 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 3. stores — GroupID + 店名 でユニーク化
-  const storeKeys = new Map<string, IerabuMetric>();
-  for (const m of metrics) {
-    const key = `${m.groupId}_${m.storeName}`;
-    if (!storeKeys.has(key)) storeKeys.set(key, m);
-  }
-
+  // 3. stores — code でユニーク化 (同一 GroupID の重複を排除)
   const { data: existingStores } = await db.from('stores').select('id, code');
   const storeCodeToId = new Map<string, string>(
     (existingStores || []).map((s: { id: string; code: string }) => [s.code, s.id])
   );
   let nextSt = (existingStores || []).length + 1;
 
-  const storeRows = [...storeKeys.entries()].map(([key, m]) => {
-    const code = `IER-${m.groupId || key.replace(/[^\w]/g, '').slice(0, 30)}`;
+  // code → store row のマップ (重複排除)
+  const codeToRow = new Map<string, { m: IerabuMetric; code: string }>();
+  for (const m of metrics) {
+    const code = `IER-${m.groupId}`;
+    if (!codeToRow.has(code)) codeToRow.set(code, { m, code });
+  }
+
+  const storeRows = [...codeToRow.values()].map(({ m, code }) => {
     let id = storeCodeToId.get(code);
     if (!id) {
       id = `st-${String(nextSt++).padStart(5, '0')}`;
       storeCodeToId.set(code, id);
     }
-    // 元のキーでもマッピング
-    storeCodeToId.set(key, id);
     return {
       id, code, name: m.storeName,
       agency_id: AGENCY_ID, agency_name: AGENCY_NAME,
@@ -92,8 +90,8 @@ export async function POST(req: NextRequest) {
   // 4. monthly_metrics
   const metricAgg = new Map<string, number>();
   for (const m of metrics) {
-    const key = `${m.groupId}_${m.storeName}`;
-    const storeId = storeCodeToId.get(key);
+    const code = `IER-${m.groupId}`;
+    const storeId = storeCodeToId.get(code);
     if (!storeId) continue;
     const mk = `${storeId}__${m.yearMonth}`;
     metricAgg.set(mk, (metricAgg.get(mk) || 0) + m.referrals);
@@ -124,7 +122,7 @@ export async function POST(req: NextRequest) {
   });
 
   // 6. refresh
-  try { await db.rpc('refresh_all_views'); } catch { insertErrors.push('マテビューリフレッシュに失敗'); }
+  try { await refreshMaterializedViews(); } catch { insertErrors.push('マテビューリフレッシュに失敗'); }
 
   return NextResponse.json({
     ok: true, sheetsProcessed, companyCount, storeCount,

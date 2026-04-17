@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getAdminSupabaseClient } from '@/lib/supabase/admin';
-import { isCurrentUserAdmin } from '@/lib/data/repository';
+import { isCurrentUserAdmin, refreshMaterializedViews } from '@/lib/data/repository';
 import { type ParsedTransaction } from '@/lib/excel/unext-parser';
 
 export const runtime = 'nodejs';
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
     await syncLegacyFromDb(db, batchId);
 
     try {
-      await db.rpc('refresh_all_views');
+      await refreshMaterializedViews();
     } catch {
       insertErrors.push('マテビューリフレッシュに失敗（データは保存済み）');
     }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getAdminSupabaseClient } from '@/lib/supabase/admin';
-import { isCurrentUserAdmin } from '@/lib/data/repository';
+import { isCurrentUserAdmin, refreshMaterializedViews } from '@/lib/data/repository';
 import type { HousemateMetric } from '@/lib/excel/housemate-parser';
 
 export const runtime = 'nodejs';
@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
 
   // 6. マテビューリフレッシュ
   try {
-    await db.rpc('refresh_all_views');
+    await refreshMaterializedViews();
   } catch {
     insertErrors.push('マテビューリフレッシュに失敗');
   }

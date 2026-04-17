@@ -2,4 +2,4 @@
  * アプリのバージョン番号。
  * プッシュのたびに 0.1 ずつインクリメントする。
  */
-export const APP_VERSION = 'v1.5';
+export const APP_VERSION = 'v1.6';

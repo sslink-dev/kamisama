@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getAdminSupabaseClient } from '@/lib/supabase/admin';
-import { isCurrentUserAdmin } from '@/lib/data/repository';
+import { isCurrentUserAdmin, refreshMaterializedViews } from '@/lib/data/repository';
 import type { RensaMetric } from '@/lib/excel/rensa-parser';
 
 export const runtime = 'nodejs';
@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
   });
 
   // 6. マテビューリフレッシュ
-  try { await db.rpc('refresh_all_views'); } catch { insertErrors.push('マテビューリフレッシュに失敗'); }
+  try { await refreshMaterializedViews(); } catch { insertErrors.push('マテビューリフレッシュに失敗'); }
 
   return NextResponse.json({
     ok: true, sheetsProcessed, companyCount, storeCount,
