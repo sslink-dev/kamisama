@@ -12,6 +12,7 @@ import { LoadingOverlay } from '@/components/layout/loading-overlay';
 import { Download, Upload, FileSpreadsheet, Zap } from 'lucide-react';
 import type { UnextParseResult } from '@/lib/excel/unext-parser';
 import type { HousemateParseResult } from '@/lib/excel/housemate-parser';
+import type { RensaParseResult } from '@/lib/excel/rensa-parser';
 import { parseCsv, validateHeaders, type ParseResult } from '@/lib/csv/parser';
 import { importToSupabase, type ImportResult } from '@/lib/csv/importer';
 import { generateEmptyTemplate, exportAllData, downloadCsv } from '@/lib/csv/exporter';
@@ -118,10 +119,47 @@ export default function ImportPage() {
       const XLSX = await import('xlsx');
       const wb = XLSX.read(new Uint8Array(buffer), { type: 'array', bookSheets: true });
       const sheetNames: string[] = wb.SheetNames;
+      const isRensa = sheetNames.includes('連携実績') || sheetNames.includes('エイブル実績_グローバル');
       const isHousemate = sheetNames.some(n => n.includes('ユニット別'));
       const isUnext = sheetNames.includes('元データ') || sheetNames.includes('データ貼付');
 
-      if (isHousemate) {
+      if (isRensa) {
+        // --- レンサ ---
+        const parsed = await new Promise<RensaParseResult>((resolve, reject) => {
+          const worker = new Worker(new URL('@/lib/excel/rensa-worker', import.meta.url));
+          worker.onmessage = (e: MessageEvent<RensaParseResult>) => { resolve(e.data); worker.terminate(); };
+          worker.onerror = (e) => { reject(new Error(e.message || 'Worker error')); worker.terminate(); };
+          worker.postMessage(buffer, [buffer]);
+        });
+
+        if (parsed.metrics.length === 0) {
+          setUnextResult({ ok: false, error: '有効なデータが見つかりませんでした' });
+          return;
+        }
+
+        const res = await fetch('/api/import/rensa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: file.name,
+            metrics: parsed.metrics,
+            sheetsProcessed: parsed.sheetsProcessed,
+            companyCount: parsed.companyCount,
+            storeCount: parsed.storeCount,
+          }),
+        });
+        const data = await res.json();
+        setUnextResult({
+          ok: data.ok,
+          sheetName: `レンサ (${parsed.sheetsProcessed.join(', ')})`,
+          totalRows: parsed.metrics.length,
+          insertedCount: data.metricsCount,
+          staffCount: 0,
+          error: data.error,
+          insertErrors: data.insertErrors,
+        });
+
+      } else if (isHousemate) {
         // --- ハウスメイト ---
         const parsed = await new Promise<HousemateParseResult>((resolve, reject) => {
           const worker = new Worker(new URL('@/lib/excel/housemate-worker', import.meta.url));
@@ -279,12 +317,15 @@ export default function ImportPage() {
                 <p className="text-sm text-gray-500">
                   代理店の Excel ファイルをドロップしてください。フォーマットを自動判別して取り込みます。
                 </p>
-                <div className="grid grid-cols-1 gap-2 text-xs text-gray-500 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2 text-xs text-gray-500 sm:grid-cols-3">
                   <div className="rounded border p-2">
                     <span className="font-medium text-blue-700">U-NEXT</span>: 「元データ」シートから取次・通電・成約・担当者を抽出
                   </div>
                   <div className="rounded border p-2">
                     <span className="font-medium text-green-700">ハウスメイト</span>: 年間シートから店舗別月次取次数を抽出
+                  </div>
+                  <div className="rounded border p-2">
+                    <span className="font-medium text-amber-700">レンサ</span>: 連携実績 + エイブル実績から取次数を抽出
                   </div>
                 </div>
                 <FileDropzone
