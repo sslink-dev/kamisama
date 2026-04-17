@@ -18,6 +18,9 @@ import type { DualParseResult } from '@/lib/excel/dual-parser';
 import type { UmxParseResult } from '@/lib/excel/umx-parser';
 import type { ShelterParseResult } from '@/lib/excel/shelter-parser';
 import type { SmasapoParseResult } from '@/lib/excel/smasapo-parser';
+import type { FplainParseResult } from '@/lib/excel/fplain-parser';
+import type { VendorParseResult } from '@/lib/excel/vendor-parser';
+import type { LastmileParseResult } from '@/lib/excel/lastmile-parser';
 import { parseCsv, validateHeaders, type ParseResult } from '@/lib/csv/parser';
 import { importToSupabase, type ImportResult } from '@/lib/csv/importer';
 import { generateEmptyTemplate, exportAllData, downloadCsv } from '@/lib/csv/exporter';
@@ -124,6 +127,13 @@ export default function ImportPage() {
       const XLSX = await import('xlsx');
       const wb = XLSX.read(new Uint8Array(buffer), { type: 'array', bookSheets: true });
       const sheetNames: string[] = wb.SheetNames;
+      const isLastmile = sheetNames.includes('LOM') || sheetNames.includes('noiatto');
+      // ベンダー/エフプレインは単一シート → ヘッダ行で判別
+      const firstSheet = wb.Sheets[sheetNames[0]];
+      const headerRow = firstSheet ? XLSX.utils.sheet_to_json(firstSheet, { header: 1, range: { s: { r: 0, c: 0 }, e: { r: 0, c: 25 } } })[0] as unknown[] || [] : [];
+      const headers = headerRow.map(c => String(c || ''));
+      const isVendor = !isLastmile && headers.includes('コール結果_回線');
+      const isFplain = !isLastmile && !isVendor && headers.includes('現在状況') && headers.includes('作成日');
       const isDual = sheetNames.includes('進捗状況') && !sheetNames.includes('取次数');
       const isSmasapo = sheetNames.includes('取次数') && sheetNames.includes('受注数');
       const isShelter = sheetNames.some(n => n.includes('取次数') && n.includes('週'));
@@ -133,7 +143,94 @@ export default function ImportPage() {
       const isHousemate = sheetNames.some(n => n.includes('ユニット別'));
       const isUnext = sheetNames.includes('元データ') || sheetNames.includes('データ貼付');
 
-      if (isDual) {
+      if (isLastmile) {
+        // --- ラストワンマイル ---
+        const parsed = await new Promise<LastmileParseResult>((resolve, reject) => {
+          const worker = new Worker(new URL('@/lib/excel/lastmile-worker', import.meta.url));
+          worker.onmessage = (e: MessageEvent<LastmileParseResult>) => { resolve(e.data); worker.terminate(); };
+          worker.onerror = (e) => { reject(new Error(e.message)); worker.terminate(); };
+          worker.postMessage(buffer, [buffer]);
+        });
+        if (parsed.metrics.length === 0) { setUnextResult({ ok: false, error: 'ラストワンマイル: 有効なデータが見つかりませんでした' }); return; }
+        // 集計: 企業×店舗×月 → refs/conns/brks
+        const agg = new Map<string, { companyName: string; storeName: string; ym: string; refs: number; conns: number; brks: number }>();
+        for (const m of parsed.metrics) {
+          const k = `${m.companyName}__${m.storeName}__${m.yearMonth}`;
+          const p = agg.get(k) || { companyName: m.companyName, storeName: m.storeName, ym: m.yearMonth, refs: 0, conns: 0, brks: 0 };
+          if (m.isReferral) p.refs++;
+          if (m.isConnected) p.conns++;
+          if (m.isContracted) p.brks++;
+          agg.set(k, p);
+        }
+        const res = await fetch('/api/import/agency', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agencyId: 'ag-lastmile', agencyName: 'ラストワンマイル', fileName: file.name,
+            storeCodePrefix: 'LM', sheetsProcessed: parsed.sheetsProcessed,
+            metrics: [...agg.values()].map(a => ({ companyName: a.companyName, storeName: a.storeName, yearMonth: a.ym, referrals: a.refs, connections: a.conns, brokerage: a.brks })),
+          }),
+        });
+        const data = await res.json();
+        setUnextResult({ ok: data.ok, sheetName: `ラストワンマイル (${parsed.sheetsProcessed.join(', ')})`, totalRows: parsed.totalRows, insertedCount: data.metricsCount, staffCount: 0, error: data.error, insertErrors: data.insertErrors });
+
+      } else if (isVendor) {
+        // --- ベンダー ---
+        const parsed = await new Promise<VendorParseResult>((resolve, reject) => {
+          const worker = new Worker(new URL('@/lib/excel/vendor-worker', import.meta.url));
+          worker.onmessage = (e: MessageEvent<VendorParseResult>) => { resolve(e.data); worker.terminate(); };
+          worker.onerror = (e) => { reject(new Error(e.message)); worker.terminate(); };
+          worker.postMessage(buffer, [buffer]);
+        });
+        if (parsed.metrics.length === 0) { setUnextResult({ ok: false, error: 'ベンダー: 有効なデータが見つかりませんでした' }); return; }
+        const agg = new Map<string, { companyName: string; storeName: string; ym: string; refs: number; conns: number; brks: number }>();
+        for (const m of parsed.metrics) {
+          const k = `${m.companyName}__${m.storeName}__${m.yearMonth}`;
+          const p = agg.get(k) || { companyName: m.companyName, storeName: m.storeName, ym: m.yearMonth, refs: 0, conns: 0, brks: 0 };
+          if (m.isReferral) p.refs++;
+          if (m.isConnected) p.conns++;
+          if (m.isContracted) p.brks++;
+          agg.set(k, p);
+        }
+        const res = await fetch('/api/import/agency', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agencyId: 'ag-vendor', agencyName: 'ベンダー', fileName: file.name,
+            storeCodePrefix: 'VND', sheetsProcessed: ['Sheet1'],
+            metrics: [...agg.values()].map(a => ({ companyName: a.companyName, storeName: a.storeName, yearMonth: a.ym, referrals: a.refs, connections: a.conns, brokerage: a.brks })),
+          }),
+        });
+        const data = await res.json();
+        setUnextResult({ ok: data.ok, sheetName: 'ベンダー', totalRows: parsed.totalRows, insertedCount: data.metricsCount, staffCount: 0, error: data.error, insertErrors: data.insertErrors });
+
+      } else if (isFplain) {
+        // --- エフプレイン ---
+        const parsed = await new Promise<FplainParseResult>((resolve, reject) => {
+          const worker = new Worker(new URL('@/lib/excel/fplain-worker', import.meta.url));
+          worker.onmessage = (e: MessageEvent<FplainParseResult>) => { resolve(e.data); worker.terminate(); };
+          worker.onerror = (e) => { reject(new Error(e.message)); worker.terminate(); };
+          worker.postMessage(buffer, [buffer]);
+        });
+        if (parsed.metrics.length === 0) { setUnextResult({ ok: false, error: 'エフプレイン: 有効なデータが見つかりませんでした' }); return; }
+        const agg = new Map<string, { companyName: string; ym: string; refs: number; brks: number }>();
+        for (const m of parsed.metrics) {
+          const k = `${m.companyName}__${m.yearMonth}`;
+          const p = agg.get(k) || { companyName: m.companyName, ym: m.yearMonth, refs: 0, brks: 0 };
+          p.refs++;
+          if (m.isContracted) p.brks++;
+          agg.set(k, p);
+        }
+        const res = await fetch('/api/import/agency', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agencyId: 'ag-fplain', agencyName: 'エフプレイン', fileName: file.name,
+            storeCodePrefix: 'FPL', sheetsProcessed: ['Sheet1'],
+            metrics: [...agg.values()].map(a => ({ companyName: a.companyName, storeName: a.companyName, yearMonth: a.ym, referrals: a.refs, connections: 0, brokerage: a.brks })),
+          }),
+        });
+        const data = await res.json();
+        setUnextResult({ ok: data.ok, sheetName: 'エフプレイン', totalRows: parsed.totalRows, insertedCount: data.metricsCount, staffCount: parsed.staffCount, error: data.error, insertErrors: data.insertErrors });
+
+      } else if (isDual) {
         // --- DUAL ---
         const parsed = await new Promise<DualParseResult>((resolve, reject) => {
           const worker = new Worker(new URL('@/lib/excel/dual-worker', import.meta.url));
@@ -443,15 +540,17 @@ export default function ImportPage() {
                 <p className="text-sm text-gray-500">
                   代理店の Excel ファイルをドロップしてください。フォーマットを自動判別して取り込みます。
                 </p>
-                <div className="grid grid-cols-2 gap-1.5 text-[11px] text-gray-500 lg:grid-cols-4">
-                  <div className="rounded border p-1.5"><span className="font-medium text-blue-700">U-NEXT</span> 取次/通電/成約</div>
-                  <div className="rounded border p-1.5"><span className="font-medium text-green-700">ハウスメイト</span> 取次数</div>
-                  <div className="rounded border p-1.5"><span className="font-medium text-amber-700">レンサ</span> 取次数</div>
-                  <div className="rounded border p-1.5"><span className="font-medium text-purple-700">いえらぶ</span> 取次数</div>
-                  <div className="rounded border p-1.5"><span className="font-medium text-rose-700">UMX</span> 送客数=取次</div>
-                  <div className="rounded border p-1.5"><span className="font-medium text-cyan-700">Shelter</span> 取次/通電/成約</div>
-                  <div className="rounded border p-1.5"><span className="font-medium text-orange-700">スマサポ</span> 取次/成約+前年</div>
-                  <div className="rounded border p-1.5"><span className="font-medium text-indigo-700">DUAL</span> 取次/通電/有効</div>
+                <div className="grid grid-cols-2 gap-1.5 text-[11px] text-gray-500 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+                  {[
+                    ['U-NEXT','取次/通電/成約','blue'], ['ハウスメイト','取次','green'], ['レンサ','取次','amber'],
+                    ['いえらぶ','取次','purple'], ['UMX','取次','rose'], ['Shelter','取次/通電/成約','cyan'],
+                    ['スマサポ','取次/成約','orange'], ['DUAL','取次/通電/有効','indigo'],
+                    ['エフプレイン','取次/成約/個人','pink'], ['ベンダー','取次/通電/成約','sky'], ['ラストワンマイル','取次/通電/成約/有効','violet'],
+                  ].map(([name,desc,color]) => (
+                    <div key={name} className="rounded border p-1.5">
+                      <span className={`font-medium text-${color}-700`}>{name}</span> {desc}
+                    </div>
+                  ))}
                 </div>
                 <FileDropzone
                   accept=".xlsx,.xls"
