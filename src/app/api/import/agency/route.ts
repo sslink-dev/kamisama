@@ -82,31 +82,41 @@ export async function POST(req: NextRequest) {
     // 1. agency upsert (1 query)
     await db.from('agencies').upsert({ id: agencyId, name: agencyName }, { onConflict: 'id' });
 
-    // 2. companies — bulk upsert (関連分のみ SELECT)
+    // ============================================
+    // 2. COMPANIES — INSERT (DO NOTHING) → SELECT で権威 map を構築
+    // ============================================
+    // race condition (read-replica 遅延) で SELECT が既存行を見落としても、
+    // INSERT(ignoreDuplicates) なら既存行を破壊しない。SELECT を後で行えば確実。
     const companyNames = [...new Set(metrics.map(m => m.companyName))];
-    const { data: existingCompanies } = await db
-      .from('companies')
-      .select('id, name')
-      .in('name', companyNames);
-    const companyMap = new Map<string, string>(
-      (existingCompanies || []).map((c: { id: string; name: string }) => [c.name, c.id])
-    );
 
-    // 新規 company は決定論的 ID を生成
-    const newCompanies: { id: string; name: string; agency_id: string }[] = [];
-    for (const name of companyNames) {
-      if (!companyMap.has(name)) {
-        const id = makeCompanyId(name);
-        newCompanies.push({ id, name, agency_id: agencyId });
-        companyMap.set(name, id);
-      }
-    }
-    if (newCompanies.length > 0) {
-      const { error } = await db.from('companies').upsert(newCompanies, { onConflict: 'name' });
-      if (error) insertErrors.push(`companies: ${error.message}`);
+    const companyCandidates = companyNames.map(name => ({
+      id: makeCompanyId(name),
+      name,
+      agency_id: agencyId,
+    }));
+    for (let i = 0; i < companyCandidates.length; i += BATCH_SIZE) {
+      const { error } = await db
+        .from('companies')
+        .upsert(companyCandidates.slice(i, i + BATCH_SIZE), {
+          onConflict: 'name',
+          ignoreDuplicates: true,    // 既存があれば何もしない
+        });
+      if (error) insertErrors.push(`companies[${i}]: ${error.message}`);
     }
 
-    // 3. stores — INSERT (新規) と UPDATE (既存 by id) を分離して FK 違反を防ぐ
+    // 権威ある companyMap を構築 (DB に実在する id のみ)
+    const companyMap = new Map<string, string>();
+    for (let i = 0; i < companyNames.length; i += 500) {
+      const chunk = companyNames.slice(i, i + 500);
+      const { data } = await db.from('companies').select('id, name').in('name', chunk);
+      (data || []).forEach((c: { id: string; name: string }) => {
+        companyMap.set(c.name, c.id);
+      });
+    }
+
+    // ============================================
+    // 3. STORES — INSERT (DO NOTHING) → SELECT で権威 map → 任意で UPDATE
+    // ============================================
     const storeByCode = new Map<string, GenericMetric>();
     for (const m of metrics) {
       const code = makeCode(m, storeCodePrefix);
@@ -114,7 +124,27 @@ export async function POST(req: NextRequest) {
     }
     const allCodes = [...storeByCode.keys()];
 
-    // 関連 code のみ SELECT して既存 ID を取得
+    // 候補を生成 (新規分のみ INSERT される)
+    const storeCandidates = [...storeByCode.entries()].map(([code, m]) => ({
+      id: makeStoreId(code),
+      code, name: m.storeName,
+      agency_id: agencyId, agency_name: agencyName,
+      company_id: companyMap.get(m.companyName) || null,
+      company_name: m.companyName,
+      unit: m.area || null,
+      is_ng: false, is_priority: false, is_priority_q3: false,
+    }));
+    for (let i = 0; i < storeCandidates.length; i += BATCH_SIZE) {
+      const { error } = await db
+        .from('stores')
+        .upsert(storeCandidates.slice(i, i + BATCH_SIZE), {
+          onConflict: 'code',
+          ignoreDuplicates: true,    // 既存があれば何もしない (id 書き換え防止)
+        });
+      if (error) insertErrors.push(`stores_new[${i}]: ${error.message}`);
+    }
+
+    // 権威ある storeCodeToId を構築 (DB に実在する id のみ)
     const storeCodeToId = new Map<string, string>();
     for (let i = 0; i < allCodes.length; i += 500) {
       const chunk = allCodes.slice(i, i + 500);
@@ -122,45 +152,6 @@ export async function POST(req: NextRequest) {
       (data || []).forEach((s: { id: string; code: string }) => {
         storeCodeToId.set(s.code, s.id);
       });
-    }
-
-    const newStoreRows: Record<string, unknown>[] = [];
-    const updateStoreRows: Record<string, unknown>[] = [];
-    for (const [code, m] of storeByCode.entries()) {
-      const baseFields = {
-        code, name: m.storeName,
-        agency_id: agencyId, agency_name: agencyName,
-        company_id: companyMap.get(m.companyName) || null,
-        company_name: m.companyName,
-        unit: m.area || null,
-      };
-      const existingId = storeCodeToId.get(code);
-      if (existingId) {
-        // upsert by id: id が conflict key なので ID は絶対に書き換わらない
-        updateStoreRows.push({ id: existingId, ...baseFields });
-      } else {
-        const id = makeStoreId(code);
-        storeCodeToId.set(code, id);
-        newStoreRows.push({
-          id, ...baseFields,
-          is_ng: false, is_priority: false, is_priority_q3: false,
-        });
-      }
-    }
-
-    // 新規: INSERT (id は事前生成されているので衝突しない限り成功)
-    for (let i = 0; i < newStoreRows.length; i += BATCH_SIZE) {
-      const { error } = await db
-        .from('stores')
-        .upsert(newStoreRows.slice(i, i + BATCH_SIZE), { onConflict: 'code' });
-      if (error) insertErrors.push(`stores_new[${i}]: ${error.message}`);
-    }
-    // 既存: UPDATE (onConflict='id' なので id は触れず、他フィールドのみ更新)
-    for (let i = 0; i < updateStoreRows.length; i += BATCH_SIZE) {
-      const { error } = await db
-        .from('stores')
-        .upsert(updateStoreRows.slice(i, i + BATCH_SIZE), { onConflict: 'id' });
-      if (error) insertErrors.push(`stores_upd[${i}]: ${error.message}`);
     }
 
     // 4. monthly_metrics — 同一 store×month を合算
