@@ -45,10 +45,19 @@ export async function POST(req: NextRequest) {
     metrics: GenericMetric[];
     sheetsProcessed?: string[];
     storeCodePrefix: string;
+    /** チャンク分割アップロード時の最初のチャンクか (省略時は単発扱い=true) */
+    isFirst?: boolean;
+    /** チャンク分割アップロード時の最後のチャンクか (省略時は単発扱い=true) */
+    isLast?: boolean;
+    /** import_batches に記録する総件数 (chunked のとき isLast でのみ使用) */
+    totalRows?: number;
   };
   try { body = await req.json(); } catch { return NextResponse.json({ error: 'invalid json' }, { status: 400 }); }
 
   const { agencyId, agencyName, fileName, metrics, sheetsProcessed, storeCodePrefix } = body;
+  const isFirst = body.isFirst !== false;
+  const isLast = body.isLast !== false;
+  const totalRows = body.totalRows ?? metrics.length;
   if (!metrics || metrics.length === 0) {
     return NextResponse.json({ error: '有効なデータが見つかりませんでした' }, { status: 400 });
   }
@@ -168,18 +177,20 @@ export async function POST(req: NextRequest) {
       if (error) insertErrors.push(`metrics[${i}]: ${error.message}`);
     }
 
-    // 5. batch
-    await db.from('import_batches').insert({
-      id: `${agencyId}_${Date.now()}`,
-      file_name: fileName,
-      import_type: agencyId.replace('ag-', ''),
-      sheet_name: (sheetsProcessed || []).join(', ') || agencyName,
-      row_count: metrics.length,
-      imported_by: user.id,
-    });
+    // 5. batch + refresh は isLast チャンクでのみ実行
+    if (isLast) {
+      await db.from('import_batches').insert({
+        id: `${agencyId}_${Date.now()}`,
+        file_name: fileName,
+        import_type: agencyId.replace('ag-', ''),
+        sheet_name: (sheetsProcessed || []).join(', ') || agencyName,
+        row_count: totalRows,
+        imported_by: user.id,
+      });
 
-    // 6. refresh (best-effort, 失敗してもデータは保存済み)
-    try { await refreshMaterializedViews(); } catch { insertErrors.push('マテビューリフレッシュに失敗(データは保存済み)'); }
+      // 6. refresh (best-effort)
+      try { await refreshMaterializedViews(); } catch { insertErrors.push('マテビューリフレッシュに失敗(データは保存済み)'); }
+    }
 
     return NextResponse.json({
       ok: true,

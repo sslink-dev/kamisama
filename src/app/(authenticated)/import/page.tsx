@@ -21,7 +21,7 @@ import type { SmasapoParseResult } from '@/lib/excel/smasapo-parser';
 import type { FplainParseResult } from '@/lib/excel/fplain-parser';
 import type { VendorParseResult } from '@/lib/excel/vendor-parser';
 import type { LastmileParseResult } from '@/lib/excel/lastmile-parser';
-import { aggregateMetrics, postImport } from '@/lib/excel/import-helpers';
+import { postImport, postImportChunked } from '@/lib/excel/import-helpers';
 import { parseCsv, validateHeaders, type ParseResult } from '@/lib/csv/parser';
 import { importToSupabase, type ImportResult } from '@/lib/csv/importer';
 import { generateEmptyTemplate, exportAllData, downloadCsv } from '@/lib/csv/exporter';
@@ -164,11 +164,10 @@ export default function ImportPage() {
           if (m.isContracted) p.brks++;
           agg.set(k, p);
         }
-        const data = await postImport('/api/import/agency', {
+        const data = await postImportChunked('/api/import/agency', {
           agencyId: 'ag-lastmile', agencyName: 'ラストワンマイル', fileName: file.name,
           storeCodePrefix: 'LM', sheetsProcessed: parsed.sheetsProcessed,
-          metrics: aggregateMetrics([...agg.values()].map(a => ({ companyName: a.companyName, storeName: a.storeName, yearMonth: a.ym, referrals: a.refs, connections: a.conns, brokerage: a.brks }))),
-        });
+        }, [...agg.values()].map(a => ({ companyName: a.companyName, storeName: a.storeName, yearMonth: a.ym, referrals: a.refs, connections: a.conns, brokerage: a.brks })));
         setUnextResult({ ok: data.ok, sheetName: `ラストワンマイル (${parsed.sheetsProcessed.join(', ')})`, totalRows: parsed.totalRows, insertedCount: data.metricsCount, staffCount: 0, error: data.error, insertErrors: data.insertErrors });
 
       } else if (isVendor) {
@@ -189,11 +188,10 @@ export default function ImportPage() {
           if (m.isContracted) p.brks++;
           agg.set(k, p);
         }
-        const data = await postImport('/api/import/agency', {
+        const data = await postImportChunked('/api/import/agency', {
           agencyId: 'ag-vendor', agencyName: 'ベンダー', fileName: file.name,
           storeCodePrefix: 'VND', sheetsProcessed: ['Sheet1'],
-          metrics: aggregateMetrics([...agg.values()].map(a => ({ companyName: a.companyName, storeName: a.storeName, yearMonth: a.ym, referrals: a.refs, connections: a.conns, brokerage: a.brks }))),
-        });
+        }, [...agg.values()].map(a => ({ companyName: a.companyName, storeName: a.storeName, yearMonth: a.ym, referrals: a.refs, connections: a.conns, brokerage: a.brks })));
         setUnextResult({ ok: data.ok, sheetName: 'ベンダー', totalRows: parsed.totalRows, insertedCount: data.metricsCount, staffCount: 0, error: data.error, insertErrors: data.insertErrors });
 
       } else if (isFplain) {
@@ -213,11 +211,10 @@ export default function ImportPage() {
           if (m.isContracted) p.brks++;
           agg.set(k, p);
         }
-        const data = await postImport('/api/import/agency', {
+        const data = await postImportChunked('/api/import/agency', {
           agencyId: 'ag-fplain', agencyName: 'エフプレイン', fileName: file.name,
           storeCodePrefix: 'FPL', sheetsProcessed: ['Sheet1'],
-          metrics: aggregateMetrics([...agg.values()].map(a => ({ companyName: a.companyName, storeName: a.companyName, yearMonth: a.ym, referrals: a.refs, connections: 0, brokerage: a.brks }))),
-        });
+        }, [...agg.values()].map(a => ({ companyName: a.companyName, storeName: a.companyName, yearMonth: a.ym, referrals: a.refs, connections: 0, brokerage: a.brks })));
         setUnextResult({ ok: data.ok, sheetName: 'エフプレイン', totalRows: parsed.totalRows, insertedCount: data.metricsCount, staffCount: parsed.staffCount, error: data.error, insertErrors: data.insertErrors });
 
       } else if (isDual) {
@@ -229,12 +226,11 @@ export default function ImportPage() {
           worker.postMessage({ buffer, fileName: file.name });
         });
         if (parsed.metrics.length === 0) { setUnextResult({ ok: false, error: 'DUAL: 有効なデータが見つかりませんでした' }); return; }
-        const data = await postImport('/api/import/agency', {
+        const data = await postImportChunked('/api/import/agency', {
           agencyId: 'ag-dual', agencyName: 'DUAL', fileName: file.name,
           storeCodePrefix: 'DUAL',
           sheetsProcessed: ['進捗状況'],
-          metrics: aggregateMetrics(parsed.metrics.map(m => ({ companyName: m.companyName, storeName: m.storeName, storeId: m.storeId, yearMonth: m.yearMonth, referrals: m.referrals, connections: m.connections, brokerage: 0 }))),
-        });
+        }, parsed.metrics.map(m => ({ companyName: m.companyName, storeName: m.storeName, storeId: m.storeId, yearMonth: m.yearMonth, referrals: m.referrals, connections: m.connections, brokerage: 0 })));
         setUnextResult({ ok: data.ok, sheetName: `DUAL (${parsed.yearMonth})`, totalRows: parsed.metrics.length, insertedCount: data.metricsCount, staffCount: 0, error: data.error, insertErrors: data.insertErrors });
 
       } else if (isSmasapo) {
@@ -246,12 +242,11 @@ export default function ImportPage() {
           worker.postMessage({ buffer, fileName: file.name });
         });
         if (parsed.metrics.length === 0) { setUnextResult({ ok: false, error: 'スマサポ: 有効なデータが見つかりませんでした' }); return; }
-        const data = await postImport('/api/import/agency', {
+        const data = await postImportChunked('/api/import/agency', {
           agencyId: 'ag-smasapo', agencyName: 'スマサポ', fileName: file.name,
           storeCodePrefix: 'SMS',
           sheetsProcessed: parsed.sheetsProcessed,
-          metrics: aggregateMetrics(parsed.metrics.map(m => ({ companyName: m.companyName, storeName: m.storeName, area: m.area, yearMonth: m.yearMonth, referrals: m.referrals, connections: 0, brokerage: m.brokerage }))),
-        });
+        }, parsed.metrics.map(m => ({ companyName: m.companyName, storeName: m.storeName, area: m.area, yearMonth: m.yearMonth, referrals: m.referrals, connections: 0, brokerage: m.brokerage })));
         setUnextResult({ ok: data.ok, sheetName: `スマサポ (${parsed.sheetsProcessed.join(', ')})`, totalRows: parsed.metrics.length, insertedCount: data.metricsCount, staffCount: 0, error: data.error, insertErrors: data.insertErrors });
 
       } else if (isShelter) {
@@ -263,12 +258,11 @@ export default function ImportPage() {
           worker.postMessage(buffer, [buffer]);
         });
         if (parsed.metrics.length === 0) { setUnextResult({ ok: false, error: 'Shelter: 有効なデータが見つかりませんでした' }); return; }
-        const data = await postImport('/api/import/agency', {
+        const data = await postImportChunked('/api/import/agency', {
           agencyId: 'ag-shelter', agencyName: 'Shelter', fileName: file.name,
           storeCodePrefix: 'SHL',
           sheetsProcessed: parsed.sheetsProcessed,
-          metrics: aggregateMetrics(parsed.metrics.map(m => ({ companyName: m.companyName, storeName: m.storeName, area: m.area, yearMonth: m.yearMonth, referrals: m.referrals, connections: m.connections, brokerage: m.brokerage }))),
-        });
+        }, parsed.metrics.map(m => ({ companyName: m.companyName, storeName: m.storeName, area: m.area, yearMonth: m.yearMonth, referrals: m.referrals, connections: m.connections, brokerage: m.brokerage })));
         setUnextResult({ ok: data.ok, sheetName: `Shelter (${parsed.sheetsProcessed.join(', ')})`, totalRows: parsed.metrics.length, insertedCount: data.metricsCount, staffCount: 0, error: data.error, insertErrors: data.insertErrors });
 
       } else if (isUmx) {
@@ -280,12 +274,11 @@ export default function ImportPage() {
           worker.postMessage(buffer, [buffer]);
         });
         if (parsed.metrics.length === 0) { setUnextResult({ ok: false, error: 'UMX: 有効なデータが見つかりませんでした' }); return; }
-        const data = await postImport('/api/import/agency', {
+        const data = await postImportChunked('/api/import/agency', {
           agencyId: 'ag-umx', agencyName: 'UMX', fileName: file.name,
           storeCodePrefix: 'UMX',
           sheetsProcessed: ['不動産リスト連携進捗'],
-          metrics: aggregateMetrics(parsed.metrics.map(m => ({ companyName: m.companyName, storeName: m.storeName, yearMonth: m.yearMonth, referrals: m.referrals, connections: 0, brokerage: 0 }))),
-        });
+        }, parsed.metrics.map(m => ({ companyName: m.companyName, storeName: m.storeName, yearMonth: m.yearMonth, referrals: m.referrals, connections: 0, brokerage: 0 })));
         setUnextResult({ ok: data.ok, sheetName: 'UMX (不動産リスト連携進捗)', totalRows: parsed.metrics.length, insertedCount: data.metricsCount, staffCount: 0, error: data.error, insertErrors: data.insertErrors });
 
       } else if (isIerabu) {

@@ -46,6 +46,80 @@ export interface ImportResponse {
 }
 
 /**
+ * 大量 metrics をチャンク分割して agency-route に逐次 POST する。
+ * Vercel Hobby の 60s 関数タイムアウト対策。各チャンクが独立した invocation で動作。
+ *
+ * - metrics は事前に aggregateMetrics で重複行を圧縮
+ * - 各チャンクは ~2000 行ずつ
+ * - isFirst / isLast で finalize 処理を制御
+ * - 失敗時は途中のチャンクで打ち切り、エラーを返す
+ */
+export async function postImportChunked(
+  url: string,
+  baseBody: {
+    agencyId: string;
+    agencyName: string;
+    fileName: string;
+    storeCodePrefix: string;
+    sheetsProcessed?: string[];
+  },
+  metrics: GenericMetric[],
+  options: { chunkSize?: number; onProgress?: (done: number, total: number) => void } = {}
+): Promise<ImportResponse> {
+  const aggregated = aggregateMetrics(metrics);
+  const chunkSize = options.chunkSize ?? 2000;
+  const totalRows = aggregated.length;
+
+  if (totalRows === 0) {
+    return { ok: false, error: '有効なデータがありません' };
+  }
+
+  let totalCompanies = 0;
+  let totalStores = 0;
+  let totalMetrics = 0;
+  const allErrors: string[] = [];
+  const totalChunks = Math.ceil(totalRows / chunkSize);
+
+  for (let i = 0; i < totalRows; i += chunkSize) {
+    const chunk = aggregated.slice(i, i + chunkSize);
+    const chunkIdx = Math.floor(i / chunkSize) + 1;
+    const isFirst = i === 0;
+    const isLast = i + chunkSize >= totalRows;
+
+    const res = await postImport(url, {
+      ...baseBody,
+      metrics: chunk,
+      isFirst,
+      isLast,
+      totalRows,
+    });
+
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: `チャンク ${chunkIdx}/${totalChunks} でエラー: ${res.error || '不明'}`,
+        insertErrors: allErrors.length > 0 ? allErrors : undefined,
+      };
+    }
+
+    totalCompanies = Math.max(totalCompanies, res.companyCount || 0);
+    totalStores = Math.max(totalStores, res.storeCount || 0);
+    totalMetrics += res.metricsCount || 0;
+    if (res.insertErrors) allErrors.push(...res.insertErrors);
+
+    options.onProgress?.(Math.min(i + chunkSize, totalRows), totalRows);
+  }
+
+  return {
+    ok: true,
+    companyCount: totalCompanies,
+    storeCount: totalStores,
+    metricsCount: totalMetrics,
+    insertErrors: allErrors.length > 0 ? allErrors : undefined,
+  };
+}
+
+/**
  * fetch をラップして:
  * - HTTP エラー時は本文 (HTML 含む) からエラー要旨を抽出
  * - JSON パース失敗時もユーザーに伝わるメッセージにする
