@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { Sidebar } from '@/components/layout/sidebar';
+import { TopNav } from '@/components/layout/top-nav';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { isCurrentUserAdmin } from '@/lib/data/repository';
 import { ChatFloatButton } from '@/components/chat/chat-float-button';
@@ -20,8 +20,8 @@ export default async function AuthenticatedLayout({
 
   return (
     <>
-      <Sidebar userEmail={user.email ?? ''} isAdmin={isAdmin} />
-      <main className="min-h-full lg:ml-64">{children}</main>
+      <TopNav userEmail={user.email ?? ''} isAdmin={isAdmin} />
+      <main className="min-h-[calc(100vh-3.5rem)]">{children}</main>
       <ChatFloatButton />
     </>
   );

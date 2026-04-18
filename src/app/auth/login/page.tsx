@@ -57,10 +57,10 @@ function LoginForm() {
       <LoadingOverlay show={status === 'submitting'} fullscreen message="ログイン中..." />
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-2 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-blue-100">
-            <KeyRound className="h-6 w-6 text-blue-600" />
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-pink-100">
+            <KeyRound className="h-6 w-6 text-[#F76FAB]" />
           </div>
-          <CardTitle className="text-xl">神様CRM ログイン</CardTitle>
+          <CardTitle className="text-xl"><span className="text-[#F76FAB]">Kamisama</span>CRM ログイン</CardTitle>
           <p className="text-sm text-gray-500">
             メールアドレスとパスワードを入力してください。
           </p>
