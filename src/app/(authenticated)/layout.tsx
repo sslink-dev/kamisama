@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
-import { TopNav } from '@/components/layout/top-nav';
+import { AppSidebar } from '@/components/layout/app-sidebar';
+import { AppHeader } from '@/components/layout/app-header';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { isCurrentUserAdmin } from '@/lib/data/repository';
 import { ChatFloatButton } from '@/components/chat/chat-float-button';
@@ -19,10 +20,13 @@ export default async function AuthenticatedLayout({
   const isAdmin = await isCurrentUserAdmin();
 
   return (
-    <>
-      <TopNav userEmail={user.email ?? ''} isAdmin={isAdmin} />
-      <main className="min-h-[calc(100vh-3.5rem)]">{children}</main>
+    <div className="min-h-screen bg-[#EFF3F8]">
+      <AppSidebar />
+      <div className="ml-[72px] flex min-h-screen flex-col">
+        <AppHeader userEmail={user.email ?? ''} isAdmin={isAdmin} />
+        <main className="flex-1">{children}</main>
+      </div>
       <ChatFloatButton />
-    </>
+    </div>
   );
 }

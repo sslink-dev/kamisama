@@ -10,12 +10,13 @@ export function ChatFloatButton() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[#F76FAB] text-white shadow-lg transition hover:scale-105 hover:bg-[#e05a96] active:scale-95"
-        title="AI アシスタント"
-        aria-label="AI アシスタントを開く"
+        className="group fixed bottom-20 left-3 z-40 flex h-12 w-12 flex-col items-center justify-center rounded-full bg-[#F76FAB] text-white shadow-lg ring-4 ring-pink-100 transition hover:scale-105 active:scale-95"
+        title="AI チャット"
+        aria-label="AI チャットを開く"
         type="button"
       >
-        <Sparkles className="h-6 w-6" />
+        <Sparkles className="h-5 w-5" />
+        <span className="absolute -bottom-4 text-[9px] font-medium text-white drop-shadow">AIチャット</span>
       </button>
       <ChatDrawer open={open} onClose={() => setOpen(false)} />
     </>

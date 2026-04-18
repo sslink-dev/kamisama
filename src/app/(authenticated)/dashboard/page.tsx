@@ -1,62 +1,107 @@
-import { Header } from '@/components/layout/header';
-import { Button } from '@/components/ui/button';
-import { Edit } from 'lucide-react';
 import Link from 'next/link';
+import { Edit } from 'lucide-react';
 import {
-  getDashboardLayout,
+  getKpiSummary,
   getAvailableMonths,
+  getAgencies,
+  getMonthlyTrends,
+  getAgencySummaries,
   isCurrentUserAdmin,
+  getStoresWithLatestMetrics,
 } from '@/lib/data/repository';
-import { WidgetRenderer } from '@/components/dashboard/widgets/widget-renderer';
-import { WidgetWrapper } from '@/components/dashboard/widgets/widget-wrapper';
+import { KpiBigCard, KpiSmallCard } from '@/components/dashboard/kpi-big-card';
+import { DashboardTrendCard } from '@/components/dashboard/dashboard-trend-card';
+import { DashboardAgencyCard } from '@/components/dashboard/dashboard-agency-card';
+import { PeriodSelector } from '@/components/dashboard/period-selector';
 
 export const dynamic = 'force-dynamic';
 
-export default async function DashboardPage() {
-  const [widgets, months, isAdmin] = await Promise.all([
-    getDashboardLayout(),
-    getAvailableMonths(),
+interface Props {
+  searchParams: Promise<{ month?: string }>;
+}
+
+export default async function DashboardPage({ searchParams }: Props) {
+  const { month: monthParam } = await searchParams;
+  const months = await getAvailableMonths();
+  const currentMonth = monthParam || months[months.length - 1] || '';
+
+  const [kpi, agencies, trends, agencySummaries, isAdmin, stores] = await Promise.all([
+    getKpiSummary(currentMonth),
+    getAgencies(),
+    getMonthlyTrends(),
+    getAgencySummaries(currentMonth),
     isCurrentUserAdmin(),
+    getStoresWithLatestMetrics(),
   ]);
-  // 全利用可能月を表示（以前は '2503' 以前に固定していたが、動的に全月を使う）
-  const historicalMonths = months;
+
+  const referralRatePct = Math.round(kpi.referralRate * 100);
+  const connectionRatePct = kpi.totalReferrals > 0
+    ? Math.round((kpi.totalConnections / kpi.totalReferrals) * 100)
+    : 0;
+  const brokerageRatePct = kpi.totalReferrals > 0
+    ? Math.round((kpi.totalBrokerage / kpi.totalReferrals) * 100)
+    : 0;
+
+  const roundStoreCount = stores.filter(s => !s.isNg).length;
+  const agencyCount = agencies.length;
+
+  // Recent 12 months for trend chart
+  const recentTrends = trends.slice(-12);
 
   return (
-    <>
-      <Header title="ダッシュボード" />
-      <div className="p-6">
-        {isAdmin && (
-          <div className="mb-4 flex justify-end">
-            <Link href="/dashboard/edit">
-              <Button variant="outline" size="sm">
-                <Edit className="mr-1.5 h-3.5 w-3.5" />
-                編集
-              </Button>
+    <div className="px-8 py-6">
+      {/* Top bar: edit + period selector */}
+      <div className="mb-5 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <Link
+              href="/dashboard/edit"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-pink-200 bg-white px-3 py-1.5 text-xs font-medium text-[#F76FAB] hover:bg-pink-50"
+            >
+              <Edit className="h-3.5 w-3.5" />
+              編集
             </Link>
-          </div>
-        )}
-
-        {widgets.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-12 text-center text-sm text-gray-500">
-            ダッシュボードが設定されていません。
-            {isAdmin && (
-              <div className="mt-3">
-                <Link href="/dashboard/edit">
-                  <Button size="sm">設定を始める</Button>
-                </Link>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-3 gap-4">
-            {widgets.map(widget => (
-              <WidgetWrapper key={widget.id} widget={widget}>
-                <WidgetRenderer widget={widget} historicalMonths={historicalMonths} />
-              </WidgetWrapper>
-            ))}
-          </div>
-        )}
+          )}
+        </div>
+        <PeriodSelector months={months} current={currentMonth} />
       </div>
-    </>
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        {/* LEFT COLUMN: 3 big KPI cards + 2 small */}
+        <div className="space-y-5">
+          <KpiBigCard
+            label="取次"
+            count={kpi.totalReferrals}
+            rate={referralRatePct}
+            subLabel="仲介数"
+            subValue={kpi.totalBrokerage}
+          />
+          <KpiBigCard
+            label="通電"
+            count={kpi.totalConnections}
+            rate={connectionRatePct}
+            subLabel="取次数"
+            subValue={kpi.totalReferrals}
+          />
+          <KpiBigCard
+            label="成約"
+            count={kpi.totalBrokerage}
+            rate={brokerageRatePct}
+            subLabel="取次数"
+            subValue={kpi.totalReferrals}
+          />
+          <div className="grid grid-cols-2 gap-5">
+            <KpiSmallCard label="ラウンド店舗" count={roundStoreCount} />
+            <KpiSmallCard label="代理店" count={agencyCount} />
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: 2 chart cards */}
+        <div className="space-y-5">
+          <DashboardTrendCard data={recentTrends} />
+          <DashboardAgencyCard data={agencySummaries.slice(0, 6)} />
+        </div>
+      </div>
+    </div>
   );
 }

@@ -1,18 +1,7 @@
-import { Header } from '@/components/layout/header';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { getAgencySummaries, getAvailableMonths } from '@/lib/data/repository';
-import { formatPercent, formatNumber, formatYearMonthLong } from '@/lib/utils/year-month';
+import { formatPercent, formatNumber } from '@/lib/utils/year-month';
 import { AgencyComparisonChart } from './agency-comparison-chart';
-import { MonthSelector } from './month-selector';
+import { PeriodSelector } from '@/components/dashboard/period-selector';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,94 +12,97 @@ interface Props {
 export default async function AgenciesPage({ searchParams }: Props) {
   const params = await searchParams;
   const months = await getAvailableMonths();
-  const selectedMonth = params.month || undefined; // undefined = 全期間
+  const selectedMonth = params.month || undefined;
 
   const summaries = (await getAgencySummaries(selectedMonth))
     .sort((a, b) => b.totalReferrals - a.totalReferrals);
 
-  const periodLabel = selectedMonth
-    ? formatYearMonthLong(selectedMonth)
-    : '全期間累計';
-
   return (
-    <>
-      <Header title="企業分析" />
-      <div className="space-y-6 p-6">
-        {/* 月選択 */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm text-gray-500">
-            対象期間: <span className="font-medium text-gray-900">{periodLabel}</span>
+    <div className="space-y-5 px-8 py-6">
+      {/* Section: 代理店比較 */}
+      <div className="rounded-2xl bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-end justify-between gap-4">
+          <div className="flex items-baseline gap-4">
+            <h2 className="text-base font-semibold tracking-[0.3em] text-gray-700">代理店比較</h2>
+            <span className="text-sm tracking-[0.2em] text-gray-500">取次 / 通電 / 成約</span>
           </div>
-          <MonthSelector months={months} current={selectedMonth} />
+          <PeriodSelector months={months} current={selectedMonth || ''} />
         </div>
 
-        <AgencyComparisonChart data={summaries} />
+        <div className="grid grid-cols-[180px_1fr] gap-0 border-t border-gray-100 pt-3">
+          {/* Agency name list */}
+          <ul className="space-y-3 border-r border-gray-100 py-2 pr-2 text-sm text-gray-700">
+            {summaries.length === 0 ? (
+              <li className="text-gray-400">データがありません</li>
+            ) : (
+              summaries.map(s => (
+                <li key={s.agencyId} className="truncate" title={s.agencyName}>
+                  {s.agencyName}
+                </li>
+              ))
+            )}
+          </ul>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">企業サマリ ({periodLabel})</CardTitle>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>企業名</TableHead>
-                  <TableHead className="text-right">店舗数</TableHead>
-                  <TableHead className="text-right">アクティブ</TableHead>
-                  <TableHead className="text-right">NG</TableHead>
-                  <TableHead className="text-right">取次数</TableHead>
-                  <TableHead className="text-right">通電数</TableHead>
-                  <TableHead className="text-right">成約数</TableHead>
-                  <TableHead className="text-right">成約率</TableHead>
-                  <TableHead className="text-right">目標達成率</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {summaries.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={9} className="text-center text-gray-500">
-                      データがありません
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  summaries.map(s => {
-                    const contractRate = s.totalReferrals > 0
-                      ? s.totalBrokerage / s.totalReferrals
-                      : 0;
-                    return (
-                      <TableRow key={s.agencyId} className="hover:bg-gray-50">
-                        <TableCell className="font-medium">{s.agencyName}</TableCell>
-                        <TableCell className="text-right">{s.storeCount}</TableCell>
-                        <TableCell className="text-right">{s.activeStoreCount}</TableCell>
-                        <TableCell className="text-right">
-                          {s.ngStoreCount > 0 && (
-                            <Badge variant="outline" className="bg-red-50 text-red-700">
-                              {s.ngStoreCount}
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right font-medium">{formatNumber(s.totalReferrals)}</TableCell>
-                        <TableCell className="text-right">{formatNumber(s.totalConnections)}</TableCell>
-                        <TableCell className="text-right">{formatNumber(s.totalBrokerage)}</TableCell>
-                        <TableCell className="text-right">{formatPercent(contractRate)}</TableCell>
-                        <TableCell className="text-right">
-                          <span className={
-                            s.targetAchievementRate >= 1 ? 'text-green-600 font-medium' :
-                            s.targetAchievementRate >= 0.8 ? 'text-yellow-600' :
-                            s.targetAchievementRate > 0 ? 'text-red-600' : 'text-gray-400'
-                          }>
-                            {s.totalTargetReferrals > 0 ? formatPercent(s.targetAchievementRate) : '-'}
-                          </span>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+          {/* Chart area */}
+          <div className="pl-4">
+            <AgencyComparisonChart data={summaries} />
+            <div className="mt-3 flex items-center justify-end gap-4 text-xs text-gray-600">
+              <span className="flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded-sm bg-[#1f3a8a]" />取次数
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded-sm bg-[#60a5fa]" />通電数
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded-sm bg-[#F76FAB]" />成約数
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
-    </>
+
+      {/* Section: 代理店一覧 */}
+      <div className="rounded-2xl bg-white p-5 shadow-sm">
+        <h2 className="mb-4 text-base font-semibold tracking-[0.3em] text-gray-700">代理店一覧</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-gray-100 text-left text-sm text-gray-500">
+                <th className="py-3 pl-3 font-normal">代理店名</th>
+                <th className="py-3 font-normal">取次数</th>
+                <th className="py-3 font-normal">通電数</th>
+                <th className="py-3 font-normal">成約数</th>
+                <th className="py-3 font-normal">成約率</th>
+                <th className="py-3 font-normal">店舗数</th>
+                <th className="py-3 pr-3 font-normal">アクティブ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summaries.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-6 text-center text-gray-400">データがありません</td>
+                </tr>
+              ) : (
+                summaries.map(s => {
+                  const contractRate = s.totalReferrals > 0
+                    ? s.totalBrokerage / s.totalReferrals : 0;
+                  return (
+                    <tr key={s.agencyId} className="border-b border-gray-50 text-sm hover:bg-pink-50/30">
+                      <td className="py-3 pl-3 font-medium text-gray-800">{s.agencyName}</td>
+                      <td className="py-3 text-gray-700">{formatNumber(s.totalReferrals)}</td>
+                      <td className="py-3 text-gray-700">{formatNumber(s.totalConnections)}</td>
+                      <td className="py-3 text-gray-700">{formatNumber(s.totalBrokerage)}</td>
+                      <td className="py-3 text-gray-700">{formatPercent(contractRate)}</td>
+                      <td className="py-3 text-gray-700">{s.storeCount}</td>
+                      <td className="py-3 pr-3 text-gray-700">{s.activeStoreCount}</td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }
