@@ -43,8 +43,14 @@ export async function POST(req: NextRequest) {
   const db = getAdminSupabaseClient();
   const insertErrors: string[] = [];
 
-  // 最初のチャンクでバッチ登録
+  // 最初のチャンクでバッチ登録 + agency upsert
   if (isFirst) {
+    // 代理店マスタを upsert (legacy DB に ag-unext が無いケースに備える)
+    await db.from('agencies').upsert(
+      { id: 'ag-unext', name: 'U-NEXT' },
+      { onConflict: 'id' }
+    );
+
     const { error: batchError } = await db.from('import_batches').insert({
       id: batchId,
       file_name: fileName || 'unknown.xlsx',

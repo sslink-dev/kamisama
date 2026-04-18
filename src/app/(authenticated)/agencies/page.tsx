@@ -1,4 +1,6 @@
 import { getAgencySummaries, getAvailableMonths } from '@/lib/data/repository';
+import { CANONICAL_AGENCIES } from '@/lib/data/canonical-agencies';
+import type { AgencySummary } from '@/lib/data/types';
 import { formatPercent, formatNumber } from '@/lib/utils/year-month';
 import { AgencyComparisonChart } from './agency-comparison-chart';
 import { PeriodSelector } from '@/components/dashboard/period-selector';
@@ -9,13 +11,34 @@ interface Props {
   searchParams: Promise<{ month?: string }>;
 }
 
+function emptySummary(agencyId: string, agencyName: string): AgencySummary {
+  return {
+    agencyId,
+    agencyName,
+    storeCount: 0,
+    activeStoreCount: 0,
+    ngStoreCount: 0,
+    totalReferrals: 0,
+    totalConnections: 0,
+    totalBrokerage: 0,
+    avgReferralRate: 0,
+    totalTargetReferrals: 0,
+    targetAchievementRate: 0,
+  };
+}
+
 export default async function AgenciesPage({ searchParams }: Props) {
   const params = await searchParams;
   const months = await getAvailableMonths();
   const selectedMonth = params.month || undefined;
 
-  const summaries = (await getAgencySummaries(selectedMonth))
-    .sort((a, b) => b.totalReferrals - a.totalReferrals);
+  const fetched = await getAgencySummaries(selectedMonth);
+  const fetchedMap = new Map(fetched.map(s => [s.agencyId, s]));
+
+  // 正規 11 代理店すべてを表示 (データが無い代理店も 0 件で行を出す)
+  const summaries: AgencySummary[] = CANONICAL_AGENCIES.map(a =>
+    fetchedMap.get(a.id) ?? emptySummary(a.id, a.name)
+  );
 
   return (
     <div className="space-y-5 px-8 py-6">
@@ -32,15 +55,11 @@ export default async function AgenciesPage({ searchParams }: Props) {
         <div className="grid grid-cols-[180px_1fr] gap-0 border-t border-gray-100 pt-3">
           {/* Agency name list */}
           <ul className="space-y-3 border-r border-gray-100 py-2 pr-2 text-sm text-gray-700">
-            {summaries.length === 0 ? (
-              <li className="text-gray-400">データがありません</li>
-            ) : (
-              summaries.map(s => (
-                <li key={s.agencyId} className="truncate" title={s.agencyName}>
-                  {s.agencyName}
-                </li>
-              ))
-            )}
+            {summaries.map(s => (
+              <li key={s.agencyId} className="truncate" title={s.agencyName}>
+                {s.agencyName}
+              </li>
+            ))}
           </ul>
 
           {/* Chart area */}
@@ -78,27 +97,21 @@ export default async function AgenciesPage({ searchParams }: Props) {
               </tr>
             </thead>
             <tbody>
-              {summaries.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-6 text-center text-gray-400">データがありません</td>
-                </tr>
-              ) : (
-                summaries.map(s => {
-                  const contractRate = s.totalReferrals > 0
-                    ? s.totalBrokerage / s.totalReferrals : 0;
-                  return (
-                    <tr key={s.agencyId} className="border-b border-gray-50 text-sm hover:bg-pink-50/30">
-                      <td className="py-3 pl-3 font-medium text-gray-800">{s.agencyName}</td>
-                      <td className="py-3 text-gray-700">{formatNumber(s.totalReferrals)}</td>
-                      <td className="py-3 text-gray-700">{formatNumber(s.totalConnections)}</td>
-                      <td className="py-3 text-gray-700">{formatNumber(s.totalBrokerage)}</td>
-                      <td className="py-3 text-gray-700">{formatPercent(contractRate)}</td>
-                      <td className="py-3 text-gray-700">{s.storeCount}</td>
-                      <td className="py-3 pr-3 text-gray-700">{s.activeStoreCount}</td>
-                    </tr>
-                  );
-                })
-              )}
+              {summaries.map(s => {
+                const contractRate = s.totalReferrals > 0
+                  ? s.totalBrokerage / s.totalReferrals : 0;
+                return (
+                  <tr key={s.agencyId} className="border-b border-gray-50 text-sm hover:bg-pink-50/30">
+                    <td className="py-3 pl-3 font-bold text-gray-800">{s.agencyName}</td>
+                    <td className="py-3 text-gray-700">{formatNumber(s.totalReferrals)}</td>
+                    <td className="py-3 text-gray-700">{formatNumber(s.totalConnections)}</td>
+                    <td className="py-3 text-gray-700">{formatNumber(s.totalBrokerage)}</td>
+                    <td className="py-3 text-gray-700">{formatPercent(contractRate)}</td>
+                    <td className="py-3 text-gray-700">{s.storeCount}</td>
+                    <td className="py-3 pr-3 text-gray-700">{s.activeStoreCount}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

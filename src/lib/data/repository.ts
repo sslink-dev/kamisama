@@ -6,6 +6,10 @@ import type {
   AgencySummary, MonthlyTrend, StoreWithMetrics,
   Widget, UserRole, UserRoleRow,
 } from './types';
+import {
+  CANONICAL_AGENCY_IDS,
+  CANONICAL_AGENCY_ORDER,
+} from './canonical-agencies';
 
 // キャッシュ期間 (秒): データは手動インポート時のみ変わるので長めでOK
 const CACHE_TTL = 300; // 5分
@@ -62,13 +66,22 @@ function toMetric(row: Record<string, unknown>): Metric {
 }
 
 // --- Agencies (cached) ---
+// 正規 11 代理店のみを返す。レガシーで誤って agencies に入った企業は除外する。
 export const getAgencies = unstable_cache(
   async (): Promise<Agency[]> => {
     const supabase = getAdminSupabaseClient();
-    const { data } = await supabase.from('agencies').select('*').order('name');
-    return (data || []) as Agency[];
+    const { data } = await supabase
+      .from('agencies')
+      .select('*')
+      .in('id', Array.from(CANONICAL_AGENCY_IDS));
+    const rows = (data || []) as Agency[];
+    return rows.sort((a, b) => {
+      const oa = CANONICAL_AGENCY_ORDER.get(a.id) ?? 999;
+      const ob = CANONICAL_AGENCY_ORDER.get(b.id) ?? 999;
+      return oa - ob;
+    });
   },
-  ['agencies'],
+  ['agencies_canonical'],
   { revalidate: CACHE_TTL, tags: ['agencies'] }
 );
 
@@ -269,7 +282,17 @@ const getAgencySummariesTotalCached = unstable_cache(
 );
 
 export async function getAgencySummaries(yearMonth?: string): Promise<AgencySummary[]> {
-  return yearMonth ? getAgencySummariesByMonthCached(yearMonth) : getAgencySummariesTotalCached();
+  const raw = yearMonth
+    ? await getAgencySummariesByMonthCached(yearMonth)
+    : await getAgencySummariesTotalCached();
+  // 正規 11 代理店のみ + 表示順固定
+  return raw
+    .filter(s => CANONICAL_AGENCY_IDS.has(s.agencyId))
+    .sort((a, b) => {
+      const oa = CANONICAL_AGENCY_ORDER.get(a.agencyId) ?? 999;
+      const ob = CANONICAL_AGENCY_ORDER.get(b.agencyId) ?? 999;
+      return oa - ob;
+    });
 }
 
 // --- Utility (cached) ---

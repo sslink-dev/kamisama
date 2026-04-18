@@ -16,8 +16,8 @@ interface Props {
 }
 
 export function AgencyComparisonChart({ data }: Props) {
+  // 元の表示順を保持しつつ、横棒グラフは下から上に積むので反転
   const chartData = data
-    .slice(0, 15)
     .map(d => ({
       name: d.agencyName.length > 8 ? d.agencyName.slice(0, 8) + '…' : d.agencyName,
       取次数: d.totalReferrals,
@@ -27,12 +27,12 @@ export function AgencyComparisonChart({ data }: Props) {
     .reverse();
 
   return (
-    <div className="h-80">
+    <div className="h-[420px]">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={chartData} layout="vertical" margin={{ left: 0, right: 20, top: 10 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
           <XAxis type="number" fontSize={11} tick={{ fill: '#6b7280' }} />
-          <YAxis type="category" dataKey="name" fontSize={11} width={80} tick={{ fill: '#6b7280' }} />
+          <YAxis type="category" dataKey="name" fontSize={11} width={90} tick={{ fill: '#6b7280' }} />
           <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
           <Bar dataKey="取次数" fill="#1f3a8a" radius={[0, 3, 3, 0]} />
           <Bar dataKey="通電数" fill="#60a5fa" radius={[0, 3, 3, 0]} />
