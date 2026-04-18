@@ -3,12 +3,18 @@ import { formatNumber } from '@/lib/utils/year-month';
 interface KpiBigCardProps {
   label: string;
   count: number;
-  rate: number;
+  /** % 表示。null の場合は "—" */
+  rate: number | null;
+  /** サブ行のラベル(例: "仲介数" / "目標" / "取次数") */
   subLabel: string;
-  subValue: number;
+  /** サブ行の値。null の場合は "—" */
+  subValue: number | null;
 }
 
 export function KpiBigCard({ label, count, rate, subLabel, subValue }: KpiBigCardProps) {
+  const rateDisplay = rate === null ? '—' : rate;
+  const subDisplay = subValue === null ? '—' : formatNumber(subValue);
+
   return (
     <div className="rounded-2xl bg-white px-6 py-5 shadow-sm">
       {/* Pink badge label */}
@@ -35,20 +41,20 @@ export function KpiBigCard({ label, count, rate, subLabel, subValue }: KpiBigCar
             <span className="text-sm font-bold text-gray-500">件</span>
           </div>
 
-          {/* RIGHT: rate + % (上段、ベースライン揃え用) */}
+          {/* RIGHT: rate + % */}
           <div className="flex items-baseline justify-center gap-1 pl-2">
             <span className="text-[44px] font-bold leading-none text-gray-800">
-              {rate}
+              {rateDisplay}
             </span>
             <span className="text-sm font-bold text-gray-500">%</span>
           </div>
         </div>
 
-        {/* 右下のサブテキスト (左カラムには空セルを入れて右だけに表示) */}
+        {/* サブテキスト (右側のみ表示) */}
         <div className="mt-2 grid grid-cols-2 gap-4">
           <div />
           <div className="pr-1 text-right text-[10px] font-semibold text-gray-400">
-            {subLabel}：{formatNumber(subValue)}
+            {subLabel}：{subDisplay}
           </div>
         </div>
       </div>

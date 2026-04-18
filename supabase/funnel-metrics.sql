@@ -52,8 +52,9 @@ SELECT
   COALESCE(SUM(m.referrals), 0)::int                    AS total_referrals,
   COALESCE(SUM(m.connections), 0)::int                  AS total_connections,
   COALESCE(SUM(m.brokerage), 0)::int                    AS total_brokerage,
-  CASE WHEN COALESCE(SUM(m.brokerage), 0) > 0
-       THEN ROUND((SUM(m.referrals)::numeric / SUM(m.brokerage)::numeric), 4)
+  -- 成約率 = 成約 / 取次 (referral_rate という名前は互換性のため保持)
+  CASE WHEN COALESCE(SUM(m.referrals), 0) > 0
+       THEN ROUND((SUM(m.brokerage)::numeric / SUM(m.referrals)::numeric), 4)
        ELSE 0 END                                       AS avg_referral_rate,
   COALESCE(SUM(m.target_referrals), 0)::int             AS total_target_referrals,
   CASE WHEN COALESCE(SUM(m.target_referrals), 0) > 0
@@ -100,8 +101,9 @@ RETURNS TABLE(
     COALESCE(SUM(m.referrals), 0)::int,
     COALESCE(SUM(m.connections), 0)::int,
     COALESCE(SUM(m.brokerage), 0)::int,
-    CASE WHEN COALESCE(SUM(m.brokerage), 0) > 0
-         THEN ROUND((SUM(m.referrals)::numeric / SUM(m.brokerage)::numeric), 4)
+    -- 成約率 = 成約 / 取次 (referral_rate という名前は互換性のため保持)
+    CASE WHEN COALESCE(SUM(m.referrals), 0) > 0
+         THEN ROUND((SUM(m.brokerage)::numeric / SUM(m.referrals)::numeric), 4)
          ELSE 0 END,
     CASE WHEN COALESCE(SUM(m.target_referrals), 0) > 0
          THEN ROUND((SUM(m.referrals)::numeric / SUM(m.target_referrals)::numeric), 4)
@@ -139,8 +141,9 @@ RETURNS TABLE(
     COALESCE(SUM(m.referrals), 0)::int,
     COALESCE(SUM(m.connections), 0)::int,
     COALESCE(SUM(m.brokerage), 0)::int,
-    CASE WHEN COALESCE(SUM(m.brokerage), 0) > 0
-         THEN ROUND((SUM(m.referrals)::numeric / SUM(m.brokerage)::numeric), 4)
+    -- 成約率 = 成約 / 取次 (referral_rate という名前は互換性のため保持)
+    CASE WHEN COALESCE(SUM(m.referrals), 0) > 0
+         THEN ROUND((SUM(m.brokerage)::numeric / SUM(m.referrals)::numeric), 4)
          ELSE 0 END,
     COALESCE(SUM(m.target_referrals), 0)::int,
     CASE WHEN COALESCE(SUM(m.target_referrals), 0) > 0

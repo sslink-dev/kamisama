@@ -34,13 +34,17 @@ export default async function DashboardPage({ searchParams }: Props) {
     getStoresWithLatestMetrics(),
   ]);
 
-  const referralRatePct = Math.round(kpi.referralRate * 100);
+  // ファネル: 取次 → 通電 → 成約 (DB に「仲介」列なし)
+  // 取次の上位指標は「目標」のみ。成約率/通電率は取次に対する比率。
+  const targetAchievementPct = kpi.totalTargetReferrals > 0
+    ? Math.round((kpi.totalReferrals / kpi.totalTargetReferrals) * 100)
+    : null;
   const connectionRatePct = kpi.totalReferrals > 0
     ? Math.round((kpi.totalConnections / kpi.totalReferrals) * 100)
-    : 0;
+    : null;
   const brokerageRatePct = kpi.totalReferrals > 0
     ? Math.round((kpi.totalBrokerage / kpi.totalReferrals) * 100)
-    : 0;
+    : null;
 
   const roundStoreCount = stores.filter(s => !s.isNg).length;
   const agencyCount = agencies.length;
@@ -72,9 +76,9 @@ export default async function DashboardPage({ searchParams }: Props) {
           <KpiBigCard
             label="取次"
             count={kpi.totalReferrals}
-            rate={referralRatePct}
-            subLabel="仲介数"
-            subValue={kpi.totalBrokerage}
+            rate={targetAchievementPct}
+            subLabel="目標"
+            subValue={kpi.totalTargetReferrals || null}
           />
           <KpiBigCard
             label="通電"

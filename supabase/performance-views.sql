@@ -50,8 +50,9 @@ SELECT
   COUNT(DISTINCT s.id) FILTER (WHERE s.is_ng)::int     AS ng_store_count,
   COALESCE(SUM(m.referrals), 0)::int                   AS total_referrals,
   COALESCE(SUM(m.brokerage), 0)::int                   AS total_brokerage,
-  CASE WHEN COALESCE(SUM(m.brokerage), 0) > 0
-       THEN ROUND((SUM(m.referrals)::numeric / SUM(m.brokerage)::numeric), 4)
+  -- 成約率 = 成約 / 取次 (referral_rate という名前は互換性のため保持)
+  CASE WHEN COALESCE(SUM(m.referrals), 0) > 0
+       THEN ROUND((SUM(m.brokerage)::numeric / SUM(m.referrals)::numeric), 4)
        ELSE 0 END                                      AS avg_referral_rate,
   COALESCE(SUM(m.target_referrals), 0)::int            AS total_target_referrals,
   CASE WHEN COALESCE(SUM(m.target_referrals), 0) > 0
@@ -78,8 +79,9 @@ RETURNS TABLE(
   SELECT
     COALESCE(SUM(m.referrals), 0)::int,
     COALESCE(SUM(m.brokerage), 0)::int,
-    CASE WHEN COALESCE(SUM(m.brokerage), 0) > 0
-         THEN ROUND((SUM(m.referrals)::numeric / SUM(m.brokerage)::numeric), 4)
+    -- 成約率 = 成約 / 取次 (referral_rate という名前は互換性のため保持)
+    CASE WHEN COALESCE(SUM(m.referrals), 0) > 0
+         THEN ROUND((SUM(m.brokerage)::numeric / SUM(m.referrals)::numeric), 4)
          ELSE 0 END,
     CASE WHEN COALESCE(SUM(m.target_referrals), 0) > 0
          THEN ROUND((SUM(m.referrals)::numeric / SUM(m.target_referrals)::numeric), 4)
@@ -115,8 +117,9 @@ RETURNS TABLE(
     COUNT(DISTINCT s.id) FILTER (WHERE s.is_ng)::int,
     COALESCE(SUM(m.referrals), 0)::int,
     COALESCE(SUM(m.brokerage), 0)::int,
-    CASE WHEN COALESCE(SUM(m.brokerage), 0) > 0
-         THEN ROUND((SUM(m.referrals)::numeric / SUM(m.brokerage)::numeric), 4)
+    -- 成約率 = 成約 / 取次 (referral_rate という名前は互換性のため保持)
+    CASE WHEN COALESCE(SUM(m.referrals), 0) > 0
+         THEN ROUND((SUM(m.brokerage)::numeric / SUM(m.referrals)::numeric), 4)
          ELSE 0 END,
     COALESCE(SUM(m.target_referrals), 0)::int,
     CASE WHEN COALESCE(SUM(m.target_referrals), 0) > 0
