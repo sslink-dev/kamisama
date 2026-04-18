@@ -23,7 +23,7 @@ export default async function AgenciesPage({ searchParams }: Props) {
       <div className="rounded-2xl bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-end justify-between gap-4">
           <div className="flex items-baseline gap-4">
-            <h2 className="text-base font-semibold tracking-[0.3em] text-gray-700">代理店比較</h2>
+            <h2 className="text-base font-extrabold tracking-[0.3em] text-gray-700">代理店比較</h2>
             <span className="text-sm tracking-[0.2em] text-gray-500">取次 / 通電 / 成約</span>
           </div>
           <PeriodSelector months={months} current={selectedMonth || ''} />
@@ -63,7 +63,7 @@ export default async function AgenciesPage({ searchParams }: Props) {
 
       {/* Section: 代理店一覧 */}
       <div className="rounded-2xl bg-white p-5 shadow-sm">
-        <h2 className="mb-4 text-base font-semibold tracking-[0.3em] text-gray-700">代理店一覧</h2>
+        <h2 className="mb-4 text-base font-extrabold tracking-[0.3em] text-gray-700">代理店一覧</h2>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>

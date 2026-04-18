@@ -53,7 +53,7 @@ export function StoreClientFilters({
   const hasAnyFilter = Array.from(searchParams.keys()).length > 0;
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-white p-4 shadow-sm">
       <Select
         value={searchParams.get('agency') ?? undefined}
         onValueChange={v => updateParam('agency', v ?? ALL)}

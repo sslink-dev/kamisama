@@ -3,7 +3,6 @@ import { AppSidebar } from '@/components/layout/app-sidebar';
 import { AppHeader } from '@/components/layout/app-header';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { isCurrentUserAdmin } from '@/lib/data/repository';
-import { ChatFloatButton } from '@/components/chat/chat-float-button';
 
 export default async function AuthenticatedLayout({
   children,
@@ -26,7 +25,6 @@ export default async function AuthenticatedLayout({
         <AppHeader userEmail={user.email ?? ''} isAdmin={isAdmin} />
         <main className="flex-1">{children}</main>
       </div>
-      <ChatFloatButton />
     </div>
   );
 }

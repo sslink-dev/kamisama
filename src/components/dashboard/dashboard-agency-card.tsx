@@ -27,7 +27,7 @@ export function DashboardAgencyCard({ data }: Props) {
   return (
     <div className="rounded-2xl bg-white p-5 shadow-sm">
       <div className="mb-3">
-        <span className="inline-block rounded bg-[#F76FAB] px-3 py-1 text-xs font-bold text-white">
+        <span className="inline-flex items-center justify-center rounded-md bg-[#F76FAB] px-3 py-1 text-xs font-extrabold tracking-wide text-white">
           代理店比較
         </span>
       </div>

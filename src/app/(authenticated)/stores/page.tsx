@@ -1,5 +1,4 @@
 import { Suspense } from 'react';
-import { Header } from '@/components/layout/header';
 import { StoreTable } from '@/components/stores/store-table';
 import { StoreClientFilters } from '@/components/stores/store-filters';
 import { ActiveFilterChips } from '@/components/stores/active-filter-chips';
@@ -60,25 +59,22 @@ export default async function StoresPage({
   ]);
 
   return (
-    <>
-      <Header title="店舗一覧" />
-      <div className="space-y-4 p-6">
-        <Suspense fallback={null}>
-          <StoreClientFilters
-            agencies={agencies}
-            units={units}
-            ranks={ranks}
-            flags={flags}
-            reasons={reasons}
-            companies={companies}
-          />
-          <ActiveFilterChips
-            agencies={agencies}
-            companies={companies}
-          />
-        </Suspense>
-        <StoreTable stores={stores} />
-      </div>
-    </>
+    <div className="space-y-4 px-8 py-6">
+      <Suspense fallback={null}>
+        <StoreClientFilters
+          agencies={agencies}
+          units={units}
+          ranks={ranks}
+          flags={flags}
+          reasons={reasons}
+          companies={companies}
+        />
+        <ActiveFilterChips
+          agencies={agencies}
+          companies={companies}
+        />
+      </Suspense>
+      <StoreTable stores={stores} />
+    </div>
   );
 }

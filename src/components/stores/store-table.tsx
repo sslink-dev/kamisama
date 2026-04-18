@@ -88,7 +88,7 @@ export function StoreTable({ stores }: StoreTableProps) {
           />
         ),
         cell: ({ row }) => (
-          <Link href={`/stores/${row.original.id}`} className="font-medium text-blue-600 hover:underline">
+          <Link href={`/stores/${row.original.id}`} className="font-bold text-[#F76FAB] hover:underline">
             {row.original.code}
           </Link>
         ),
@@ -311,7 +311,7 @@ export function StoreTable({ stores }: StoreTableProps) {
         </div>
       </div>
 
-      <div className="rounded-md border bg-white">
+      <div className="rounded-2xl bg-white p-2 shadow-sm">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map(headerGroup => (

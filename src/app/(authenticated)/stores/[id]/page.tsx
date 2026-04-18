@@ -48,7 +48,7 @@ export default async function StoreDetailPage({
         {/* 店舗情報 */}
         <div className="rounded-2xl bg-white p-5 shadow-sm">
           <div className="mb-3">
-            <span className="inline-block rounded bg-[#F76FAB] px-3 py-1 text-xs font-bold text-white">
+            <span className="inline-flex items-center justify-center rounded-md bg-[#F76FAB] px-3 py-1 text-xs font-extrabold tracking-wide text-white">
               店舗情報
             </span>
           </div>
@@ -73,7 +73,7 @@ export default async function StoreDetailPage({
         {/* 月次推移 */}
         <div className="rounded-2xl bg-white p-5 shadow-sm">
           <div className="mb-3">
-            <span className="inline-block rounded bg-[#F76FAB] px-3 py-1 text-xs font-bold text-white">
+            <span className="inline-flex items-center justify-center rounded-md bg-[#F76FAB] px-3 py-1 text-xs font-extrabold tracking-wide text-white">
               月次推移
             </span>
           </div>
@@ -86,7 +86,7 @@ export default async function StoreDetailPage({
         {/* 訪問履歴 */}
         <div className="rounded-2xl bg-white p-5 shadow-sm">
           <div className="mb-4">
-            <span className="inline-block rounded bg-[#F76FAB] px-3 py-1 text-xs font-bold text-white">
+            <span className="inline-flex items-center justify-center rounded-md bg-[#F76FAB] px-3 py-1 text-xs font-extrabold tracking-wide text-white">
               訪問履歴
             </span>
           </div>
@@ -125,7 +125,7 @@ export default async function StoreDetailPage({
         {/* 訪問詳細 */}
         <div className="rounded-2xl bg-pink-50/40 p-5 shadow-sm">
           <div className="mb-4">
-            <span className="inline-block rounded bg-[#F76FAB] px-3 py-1 text-xs font-bold text-white">
+            <span className="inline-flex items-center justify-center rounded-md bg-[#F76FAB] px-3 py-1 text-xs font-extrabold tracking-wide text-white">
               訪問詳細
             </span>
           </div>

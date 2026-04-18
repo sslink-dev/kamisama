@@ -39,7 +39,7 @@ export function AppHeader({ userEmail, isAdmin }: AppHeaderProps) {
     <header className="sticky top-0 z-30 flex h-14 items-center justify-between bg-white px-6 shadow-sm">
       {/* Logo */}
       <Link href="/dashboard" className="flex items-center">
-        <span className="text-xl font-bold text-[#F76FAB] tracking-tight">KamisamaCRM</span>
+        <span className="text-2xl font-extrabold text-[#F76FAB] tracking-tight">KamisamaCRM</span>
       </Link>
 
       {/* Right: user pill + hamburger */}
@@ -51,7 +51,7 @@ export function AppHeader({ userEmail, isAdmin }: AppHeaderProps) {
             </span>
             <span className="text-xs text-gray-600">{userEmail}</span>
             {isAdmin && (
-              <span className="rounded-full bg-[#F76FAB] px-2 py-0.5 text-[10px] font-semibold text-white">
+              <span className="rounded-full bg-[#F76FAB] px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide text-white">
                 admin
               </span>
             )}
