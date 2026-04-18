@@ -62,6 +62,8 @@ export async function postImportChunked(
     fileName: string;
     storeCodePrefix: string;
     sheetsProcessed?: string[];
+    /** 'replace' (既定) or 'add' */
+    mergeMode?: 'replace' | 'add';
   },
   metrics: GenericMetric[],
   options: { chunkSize?: number; onProgress?: (done: number, total: number) => void } = {}

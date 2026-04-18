@@ -64,6 +64,13 @@ export async function POST(req: NextRequest) {
     isLast?: boolean;
     /** import_batches に記録する総件数 (chunked のとき isLast でのみ使用) */
     totalRows?: number;
+    /**
+     * 同一 (店舗,月) が DB に既存の場合の挙動:
+     * - 'replace' (既定): ファイルの値で上書き (スナップショット用)
+     * - 'add'           : DB の既存値に加算 (週次バラバラ/差分のみ用)
+     * いずれの場合も「ファイルに無い月」は触らない。
+     */
+    mergeMode?: 'replace' | 'add';
   };
   try { body = await req.json(); } catch { return NextResponse.json({ error: 'invalid json' }, { status: 400 }); }
 
@@ -71,6 +78,7 @@ export async function POST(req: NextRequest) {
   const isFirst = body.isFirst !== false;
   const isLast = body.isLast !== false;
   const totalRows = body.totalRows ?? metrics.length;
+  const mergeMode: 'replace' | 'add' = body.mergeMode === 'add' ? 'add' : 'replace';
   if (!metrics || metrics.length === 0) {
     return NextResponse.json({ error: '有効なデータが見つかりませんでした' }, { status: 400 });
   }
@@ -168,6 +176,30 @@ export async function POST(req: NextRequest) {
       metricAgg.set(key, prev);
     }
 
+    // ADD モード: 既存値を SELECT して metricAgg に加算
+    if (mergeMode === 'add' && metricAgg.size > 0) {
+      const targetStoreIds = [...new Set([...metricAgg.keys()].map(k => k.split('__')[0]))];
+      const targetMonths = [...new Set([...metricAgg.keys()].map(k => k.split('__')[1]))];
+
+      for (let i = 0; i < targetStoreIds.length; i += 200) {
+        const storeChunk = targetStoreIds.slice(i, i + 200);
+        const { data } = await db
+          .from('monthly_metrics')
+          .select('store_id, year_month, referrals, connections, brokerage')
+          .in('store_id', storeChunk)
+          .in('year_month', targetMonths);
+        (data || []).forEach((row: { store_id: string; year_month: string; referrals: number; connections: number; brokerage: number }) => {
+          const key = `${row.store_id}__${row.year_month}`;
+          const incoming = metricAgg.get(key);
+          if (incoming) {
+            incoming.refs += row.referrals || 0;
+            incoming.conns += row.connections || 0;
+            incoming.brks += row.brokerage || 0;
+          }
+        });
+      }
+    }
+
     const metricRows = [...metricAgg.entries()].map(([key, d]) => {
       const [storeId, yearMonth] = key.split('__');
       return {
@@ -179,6 +211,8 @@ export async function POST(req: NextRequest) {
       };
     });
 
+    // upsert は常に「合算済み値で上書き」(REPLACE モードと同じ動作)
+    // ADD モードの場合は既に metricAgg に既存値が加算済み
     for (let i = 0; i < metricRows.length; i += BATCH_SIZE) {
       const { error } = await db
         .from('monthly_metrics')

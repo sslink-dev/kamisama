@@ -57,6 +57,12 @@ export default function ImportPage() {
   const [unextImporting, setUnextImporting] = useState(false);
   const [unextResult, setUnextResult] = useState<UnextImportResult | null>(null);
   const [unextFileName, setUnextFileName] = useState<string | null>(null);
+  /**
+   * 既存 (店舗,月) と衝突したときの挙動:
+   * - 'replace' (既定): スナップショット用。ファイルの値で上書き
+   * - 'add'           : 週次バラバラ・差分用。DB の値に加算
+   */
+  const [mergeMode, setMergeMode] = useState<'replace' | 'add'>('replace');
 
   // Export state
   const [isExporting, setIsExporting] = useState(false);
@@ -164,7 +170,7 @@ export default function ImportPage() {
           if (m.isContracted) p.brks++;
           agg.set(k, p);
         }
-        const data = await postImportChunked('/api/import/agency', {
+        const data = await postImportChunked('/api/import/agency', { mergeMode,
           agencyId: 'ag-lastmile', agencyName: 'ラストワンマイル', fileName: file.name,
           storeCodePrefix: 'LM', sheetsProcessed: parsed.sheetsProcessed,
         }, [...agg.values()].map(a => ({ companyName: a.companyName, storeName: a.storeName, yearMonth: a.ym, referrals: a.refs, connections: a.conns, brokerage: a.brks })));
@@ -188,7 +194,7 @@ export default function ImportPage() {
           if (m.isContracted) p.brks++;
           agg.set(k, p);
         }
-        const data = await postImportChunked('/api/import/agency', {
+        const data = await postImportChunked('/api/import/agency', { mergeMode,
           agencyId: 'ag-vendor', agencyName: 'ベンダー', fileName: file.name,
           storeCodePrefix: 'VND', sheetsProcessed: ['Sheet1'],
         }, [...agg.values()].map(a => ({ companyName: a.companyName, storeName: a.storeName, yearMonth: a.ym, referrals: a.refs, connections: a.conns, brokerage: a.brks })));
@@ -211,7 +217,7 @@ export default function ImportPage() {
           if (m.isContracted) p.brks++;
           agg.set(k, p);
         }
-        const data = await postImportChunked('/api/import/agency', {
+        const data = await postImportChunked('/api/import/agency', { mergeMode,
           agencyId: 'ag-fplain', agencyName: 'エフプレイン', fileName: file.name,
           storeCodePrefix: 'FPL', sheetsProcessed: ['Sheet1'],
         }, [...agg.values()].map(a => ({ companyName: a.companyName, storeName: a.companyName, yearMonth: a.ym, referrals: a.refs, connections: 0, brokerage: a.brks })));
@@ -226,7 +232,7 @@ export default function ImportPage() {
           worker.postMessage({ buffer, fileName: file.name });
         });
         if (parsed.metrics.length === 0) { setUnextResult({ ok: false, error: 'DUAL: 有効なデータが見つかりませんでした' }); return; }
-        const data = await postImportChunked('/api/import/agency', {
+        const data = await postImportChunked('/api/import/agency', { mergeMode,
           agencyId: 'ag-dual', agencyName: 'DUAL', fileName: file.name,
           storeCodePrefix: 'DUAL',
           sheetsProcessed: ['進捗状況'],
@@ -242,7 +248,7 @@ export default function ImportPage() {
           worker.postMessage({ buffer, fileName: file.name });
         });
         if (parsed.metrics.length === 0) { setUnextResult({ ok: false, error: 'スマサポ: 有効なデータが見つかりませんでした' }); return; }
-        const data = await postImportChunked('/api/import/agency', {
+        const data = await postImportChunked('/api/import/agency', { mergeMode,
           agencyId: 'ag-smasapo', agencyName: 'スマサポ', fileName: file.name,
           storeCodePrefix: 'SMS',
           sheetsProcessed: parsed.sheetsProcessed,
@@ -258,7 +264,7 @@ export default function ImportPage() {
           worker.postMessage(buffer, [buffer]);
         });
         if (parsed.metrics.length === 0) { setUnextResult({ ok: false, error: 'Shelter: 有効なデータが見つかりませんでした' }); return; }
-        const data = await postImportChunked('/api/import/agency', {
+        const data = await postImportChunked('/api/import/agency', { mergeMode,
           agencyId: 'ag-shelter', agencyName: 'Shelter', fileName: file.name,
           storeCodePrefix: 'SHL',
           sheetsProcessed: parsed.sheetsProcessed,
@@ -274,7 +280,7 @@ export default function ImportPage() {
           worker.postMessage(buffer, [buffer]);
         });
         if (parsed.metrics.length === 0) { setUnextResult({ ok: false, error: 'UMX: 有効なデータが見つかりませんでした' }); return; }
-        const data = await postImportChunked('/api/import/agency', {
+        const data = await postImportChunked('/api/import/agency', { mergeMode,
           agencyId: 'ag-umx', agencyName: 'UMX', fileName: file.name,
           storeCodePrefix: 'UMX',
           sheetsProcessed: ['不動産リスト連携進捗'],
@@ -418,7 +424,7 @@ export default function ImportPage() {
     } finally {
       setUnextImporting(false);
     }
-  }, []);
+  }, [mergeMode]);
 
   // --- Export ---
   const handleDownloadTemplate = useCallback(() => {
@@ -499,10 +505,48 @@ export default function ImportPage() {
                     </div>
                   ))}
                 </div>
+                {/* マージモード選択 */}
+                <div className="rounded-lg border border-pink-100 bg-pink-50/30 p-3">
+                  <div className="mb-2 text-xs font-bold text-gray-700">同じ月のデータが既にある場合の処理</div>
+                  <div className="flex flex-wrap gap-4 text-sm">
+                    <label className="flex cursor-pointer items-start gap-2">
+                      <input
+                        type="radio"
+                        className="mt-0.5 accent-[#F76FAB]"
+                        checked={mergeMode === 'replace'}
+                        onChange={() => setMergeMode('replace')}
+                      />
+                      <span>
+                        <span className="font-bold text-gray-800">上書き (REPLACE)</span>
+                        <span className="ml-2 text-xs text-gray-500">
+                          ファイルが当月/累計のスナップショット (大半の代理店)
+                        </span>
+                      </span>
+                    </label>
+                    <label className="flex cursor-pointer items-start gap-2">
+                      <input
+                        type="radio"
+                        className="mt-0.5 accent-[#F76FAB]"
+                        checked={mergeMode === 'add'}
+                        onChange={() => setMergeMode('add')}
+                      />
+                      <span>
+                        <span className="font-bold text-gray-800">加算 (ADD)</span>
+                        <span className="ml-2 text-xs text-gray-500">
+                          週次バラバラ・差分のみのファイル (DB 既存値に足す)
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                  <div className="mt-2 text-[11px] text-gray-500">
+                    ※ どちらのモードでも「ファイルに無い月」は触りません。
+                  </div>
+                </div>
+
                 <FileDropzone
                   accept=".xlsx,.xls"
                   label="代理店 Excel をドラッグ&ドロップ"
-                  description="U-NEXT / ハウスメイト を自動判別 (.xlsx)"
+                  description="11 代理店フォーマットを自動判別 (.xlsx)"
                   onFile={handleUnextFile}
                 />
 
