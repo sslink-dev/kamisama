@@ -18,20 +18,36 @@ export function KpiBigCard({ label, count, rate, subLabel, subValue }: KpiBigCar
         </span>
       </div>
 
-      {/* Two-column: count | rate */}
-      <div className="grid grid-cols-2 items-end gap-4">
-        <div className="flex items-baseline justify-center gap-1 border-r border-gray-100 pr-4">
-          <span className="text-[44px] font-bold leading-none text-gray-800">
-            {formatNumber(count)}
-          </span>
-          <span className="text-sm font-bold text-gray-500">件</span>
-        </div>
-        <div className="pl-2 text-center">
-          <div className="flex items-baseline justify-center gap-1">
-            <span className="text-[44px] font-bold leading-none text-gray-800">{rate}</span>
+      {/* 数字行: items-baseline で件と % の baseline を左右で揃える */}
+      <div className="relative">
+        {/* center vertical divider — 全高に伸びる */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-gray-100"
+        />
+
+        <div className="grid grid-cols-2 items-baseline gap-4">
+          {/* LEFT: count + 件 */}
+          <div className="flex items-baseline justify-center gap-1 pr-4">
+            <span className="text-[44px] font-bold leading-none text-gray-800">
+              {formatNumber(count)}
+            </span>
+            <span className="text-sm font-bold text-gray-500">件</span>
+          </div>
+
+          {/* RIGHT: rate + % (上段、ベースライン揃え用) */}
+          <div className="flex items-baseline justify-center gap-1 pl-2">
+            <span className="text-[44px] font-bold leading-none text-gray-800">
+              {rate}
+            </span>
             <span className="text-sm font-bold text-gray-500">%</span>
           </div>
-          <div className="mt-2 text-right text-[10px] font-semibold text-gray-400">
+        </div>
+
+        {/* 右下のサブテキスト (左カラムには空セルを入れて右だけに表示) */}
+        <div className="mt-2 grid grid-cols-2 gap-4">
+          <div />
+          <div className="pr-1 text-right text-[10px] font-semibold text-gray-400">
             {subLabel}：{formatNumber(subValue)}
           </div>
         </div>
