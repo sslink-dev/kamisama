@@ -21,7 +21,7 @@ export default async function AuthenticatedLayout({
   return (
     <div className="min-h-screen bg-[#EFF3F8]">
       <AppSidebar />
-      <div className="ml-[72px] flex min-h-screen flex-col">
+      <div className="ml-[88px] flex min-h-screen flex-col">
         <AppHeader userEmail={user.email ?? ''} isAdmin={isAdmin} />
         <main className="flex-1">{children}</main>
       </div>
