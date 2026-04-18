@@ -1,7 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash } from 'crypto';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getAdminSupabaseClient } from '@/lib/supabase/admin';
 import { isCurrentUserAdmin, refreshMaterializedViews } from '@/lib/data/repository';
+
+/**
+ * 決定論的 ID 生成 (同じ入力 → 同じ ID)
+ * count ベースだとチャンク並列実行時に read-replica 遅延で重複 ID が出て
+ * upsert で FK 違反が起きるため、ハッシュベースに統一。
+ */
+function makeStoreId(code: string): string {
+  return 'st-' + createHash('sha1').update(code).digest('hex').slice(0, 12);
+}
+function makeCompanyId(name: string): string {
+  return 'co-' + createHash('sha1').update(name).digest('hex').slice(0, 12);
+}
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -79,16 +92,11 @@ export async function POST(req: NextRequest) {
       (existingCompanies || []).map((c: { id: string; name: string }) => [c.name, c.id])
     );
 
-    // 既存件数取得 (新規ID採番用)
-    const { count: companyCountTotal } = await db
-      .from('companies')
-      .select('id', { count: 'exact', head: true });
-    let nextCo = (companyCountTotal || 0) + 1;
-
+    // 新規 company は決定論的 ID を生成
     const newCompanies: { id: string; name: string; agency_id: string }[] = [];
     for (const name of companyNames) {
       if (!companyMap.has(name)) {
-        const id = `co-${String(nextCo++).padStart(5, '0')}`;
+        const id = makeCompanyId(name);
         newCompanies.push({ id, name, agency_id: agencyId });
         companyMap.set(name, id);
       }
@@ -98,7 +106,7 @@ export async function POST(req: NextRequest) {
       if (error) insertErrors.push(`companies: ${error.message}`);
     }
 
-    // 3. stores — bulk upsert (関連 code のみ SELECT)
+    // 3. stores — INSERT (新規) と UPDATE (既存 by id) を分離して FK 違反を防ぐ
     const storeByCode = new Map<string, GenericMetric>();
     for (const m of metrics) {
       const code = makeCode(m, storeCodePrefix);
@@ -106,7 +114,7 @@ export async function POST(req: NextRequest) {
     }
     const allCodes = [...storeByCode.keys()];
 
-    // 関連 code のみ SELECT (chunk for IN limit)
+    // 関連 code のみ SELECT して既存 ID を取得
     const storeCodeToId = new Map<string, string>();
     for (let i = 0; i < allCodes.length; i += 500) {
       const chunk = allCodes.slice(i, i + 500);
@@ -116,33 +124,43 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 新規ID採番用に総件数取得
-    const { count: storeCountTotal } = await db
-      .from('stores')
-      .select('id', { count: 'exact', head: true });
-    let nextSt = (storeCountTotal || 0) + 1;
-
-    const storeRows = [...storeByCode.entries()].map(([code, m]) => {
-      let id = storeCodeToId.get(code);
-      if (!id) {
-        id = `st-${String(nextSt++).padStart(6, '0')}`;
-        storeCodeToId.set(code, id);
-      }
-      return {
-        id, code, name: m.storeName,
+    const newStoreRows: Record<string, unknown>[] = [];
+    const updateStoreRows: Record<string, unknown>[] = [];
+    for (const [code, m] of storeByCode.entries()) {
+      const baseFields = {
+        code, name: m.storeName,
         agency_id: agencyId, agency_name: agencyName,
         company_id: companyMap.get(m.companyName) || null,
         company_name: m.companyName,
         unit: m.area || null,
-        is_ng: false, is_priority: false, is_priority_q3: false,
       };
-    });
+      const existingId = storeCodeToId.get(code);
+      if (existingId) {
+        // upsert by id: id が conflict key なので ID は絶対に書き換わらない
+        updateStoreRows.push({ id: existingId, ...baseFields });
+      } else {
+        const id = makeStoreId(code);
+        storeCodeToId.set(code, id);
+        newStoreRows.push({
+          id, ...baseFields,
+          is_ng: false, is_priority: false, is_priority_q3: false,
+        });
+      }
+    }
 
-    for (let i = 0; i < storeRows.length; i += BATCH_SIZE) {
+    // 新規: INSERT (id は事前生成されているので衝突しない限り成功)
+    for (let i = 0; i < newStoreRows.length; i += BATCH_SIZE) {
       const { error } = await db
         .from('stores')
-        .upsert(storeRows.slice(i, i + BATCH_SIZE), { onConflict: 'code' });
-      if (error) insertErrors.push(`stores[${i}]: ${error.message}`);
+        .upsert(newStoreRows.slice(i, i + BATCH_SIZE), { onConflict: 'code' });
+      if (error) insertErrors.push(`stores_new[${i}]: ${error.message}`);
+    }
+    // 既存: UPDATE (onConflict='id' なので id は触れず、他フィールドのみ更新)
+    for (let i = 0; i < updateStoreRows.length; i += BATCH_SIZE) {
+      const { error } = await db
+        .from('stores')
+        .upsert(updateStoreRows.slice(i, i + BATCH_SIZE), { onConflict: 'id' });
+      if (error) insertErrors.push(`stores_upd[${i}]: ${error.message}`);
     }
 
     // 4. monthly_metrics — 同一 store×month を合算
