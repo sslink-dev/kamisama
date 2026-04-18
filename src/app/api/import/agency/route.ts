@@ -11,6 +11,11 @@ export const maxDuration = 60;
  * 汎用代理店インポート API
  * パーサーごとに異なる形式の metrics を受け取り、
  * companies / stores / monthly_metrics に書き込む。
+ *
+ * パフォーマンス最適化:
+ * - companies / stores の SELECT を関連名/コードのみに絞る
+ * - upsert はすべて bulk (1 upsert で多数行)
+ * - batch size 1000 (Postgres の通信往復削減)
  */
 interface GenericMetric {
   companyName: string;
@@ -24,6 +29,8 @@ interface GenericMetric {
   brokerage?: number;
   effective?: number;
 }
+
+const BATCH_SIZE = 1000;
 
 export async function POST(req: NextRequest) {
   const supabase = await createServerSupabaseClient();
@@ -49,109 +56,146 @@ export async function POST(req: NextRequest) {
   const db = getAdminSupabaseClient();
   const insertErrors: string[] = [];
 
-  // 1. agency
-  await db.from('agencies').upsert({ id: agencyId, name: agencyName }, { onConflict: 'name' });
+  try {
+    // 1. agency upsert (1 query)
+    await db.from('agencies').upsert({ id: agencyId, name: agencyName }, { onConflict: 'id' });
 
-  // 2. companies — 代理店=企業が同一の場合もある
-  const companyNames = [...new Set(metrics.map(m => m.companyName))];
-  const { data: existingCompanies } = await db.from('companies').select('id, name');
-  const companyMap = new Map<string, string>(
-    (existingCompanies || []).map((c: { id: string; name: string }) => [c.name, c.id])
-  );
-  let nextCo = (existingCompanies || []).length + 1;
-  for (const name of companyNames) {
-    if (!companyMap.has(name)) {
-      const id = `co-${String(nextCo++).padStart(4, '0')}`;
-      await db.from('companies').upsert({ id, name, agency_id: agencyId }, { onConflict: 'name' });
-      companyMap.set(name, id);
+    // 2. companies — bulk upsert (関連分のみ SELECT)
+    const companyNames = [...new Set(metrics.map(m => m.companyName))];
+    const { data: existingCompanies } = await db
+      .from('companies')
+      .select('id, name')
+      .in('name', companyNames);
+    const companyMap = new Map<string, string>(
+      (existingCompanies || []).map((c: { id: string; name: string }) => [c.name, c.id])
+    );
+
+    // 既存件数取得 (新規ID採番用)
+    const { count: companyCountTotal } = await db
+      .from('companies')
+      .select('id', { count: 'exact', head: true });
+    let nextCo = (companyCountTotal || 0) + 1;
+
+    const newCompanies: { id: string; name: string; agency_id: string }[] = [];
+    for (const name of companyNames) {
+      if (!companyMap.has(name)) {
+        const id = `co-${String(nextCo++).padStart(5, '0')}`;
+        newCompanies.push({ id, name, agency_id: agencyId });
+        companyMap.set(name, id);
+      }
     }
-  }
-
-  // 3. stores — storeCode or storeId or prefix+companyName_storeName
-  const { data: existingStores } = await db.from('stores').select('id, code');
-  const storeCodeToId = new Map<string, string>(
-    (existingStores || []).map((s: { id: string; code: string }) => [s.code, s.id])
-  );
-  let nextSt = (existingStores || []).length + 1;
-
-  // code でユニーク化
-  const storeByCode = new Map<string, GenericMetric>();
-  for (const m of metrics) {
-    const code = makeCode(m, storeCodePrefix);
-    if (!storeByCode.has(code)) storeByCode.set(code, m);
-  }
-
-  const storeRows = [...storeByCode.entries()].map(([code, m]) => {
-    let id = storeCodeToId.get(code);
-    if (!id) {
-      id = `st-${String(nextSt++).padStart(5, '0')}`;
-      storeCodeToId.set(code, id);
+    if (newCompanies.length > 0) {
+      const { error } = await db.from('companies').upsert(newCompanies, { onConflict: 'name' });
+      if (error) insertErrors.push(`companies: ${error.message}`);
     }
-    return {
-      id, code, name: m.storeName,
-      agency_id: agencyId, agency_name: agencyName,
-      company_id: companyMap.get(m.companyName) || null,
-      company_name: m.companyName,
-      unit: m.area || null,
-      is_ng: false, is_priority: false, is_priority_q3: false,
-    };
-  });
 
-  for (let i = 0; i < storeRows.length; i += 500) {
-    const { error } = await db.from('stores').upsert(storeRows.slice(i, i + 500), { onConflict: 'code' });
-    if (error) insertErrors.push(`stores: ${error.message}`);
+    // 3. stores — bulk upsert (関連 code のみ SELECT)
+    const storeByCode = new Map<string, GenericMetric>();
+    for (const m of metrics) {
+      const code = makeCode(m, storeCodePrefix);
+      if (!storeByCode.has(code)) storeByCode.set(code, m);
+    }
+    const allCodes = [...storeByCode.keys()];
+
+    // 関連 code のみ SELECT (chunk for IN limit)
+    const storeCodeToId = new Map<string, string>();
+    for (let i = 0; i < allCodes.length; i += 500) {
+      const chunk = allCodes.slice(i, i + 500);
+      const { data } = await db.from('stores').select('id, code').in('code', chunk);
+      (data || []).forEach((s: { id: string; code: string }) => {
+        storeCodeToId.set(s.code, s.id);
+      });
+    }
+
+    // 新規ID採番用に総件数取得
+    const { count: storeCountTotal } = await db
+      .from('stores')
+      .select('id', { count: 'exact', head: true });
+    let nextSt = (storeCountTotal || 0) + 1;
+
+    const storeRows = [...storeByCode.entries()].map(([code, m]) => {
+      let id = storeCodeToId.get(code);
+      if (!id) {
+        id = `st-${String(nextSt++).padStart(6, '0')}`;
+        storeCodeToId.set(code, id);
+      }
+      return {
+        id, code, name: m.storeName,
+        agency_id: agencyId, agency_name: agencyName,
+        company_id: companyMap.get(m.companyName) || null,
+        company_name: m.companyName,
+        unit: m.area || null,
+        is_ng: false, is_priority: false, is_priority_q3: false,
+      };
+    });
+
+    for (let i = 0; i < storeRows.length; i += BATCH_SIZE) {
+      const { error } = await db
+        .from('stores')
+        .upsert(storeRows.slice(i, i + BATCH_SIZE), { onConflict: 'code' });
+      if (error) insertErrors.push(`stores[${i}]: ${error.message}`);
+    }
+
+    // 4. monthly_metrics — 同一 store×month を合算
+    const metricAgg = new Map<string, { refs: number; conns: number; brks: number }>();
+    for (const m of metrics) {
+      const code = makeCode(m, storeCodePrefix);
+      const storeId = storeCodeToId.get(code);
+      if (!storeId) continue;
+      const key = `${storeId}__${m.yearMonth}`;
+      const prev = metricAgg.get(key) || { refs: 0, conns: 0, brks: 0 };
+      prev.refs += m.referrals || 0;
+      prev.conns += m.connections || 0;
+      prev.brks += m.brokerage || 0;
+      metricAgg.set(key, prev);
+    }
+
+    const metricRows = [...metricAgg.entries()].map(([key, d]) => {
+      const [storeId, yearMonth] = key.split('__');
+      return {
+        store_id: storeId, year_month: yearMonth,
+        referrals: d.refs, connections: d.conns, brokerage: d.brks,
+        // 成約率 = 成約 / 取次
+        referral_rate: d.refs > 0 ? Math.round((d.brks / d.refs) * 10000) / 10000 : null,
+        target_referrals: 0,
+      };
+    });
+
+    for (let i = 0; i < metricRows.length; i += BATCH_SIZE) {
+      const { error } = await db
+        .from('monthly_metrics')
+        .upsert(metricRows.slice(i, i + BATCH_SIZE), { onConflict: 'store_id,year_month' });
+      if (error) insertErrors.push(`metrics[${i}]: ${error.message}`);
+    }
+
+    // 5. batch
+    await db.from('import_batches').insert({
+      id: `${agencyId}_${Date.now()}`,
+      file_name: fileName,
+      import_type: agencyId.replace('ag-', ''),
+      sheet_name: (sheetsProcessed || []).join(', ') || agencyName,
+      row_count: metrics.length,
+      imported_by: user.id,
+    });
+
+    // 6. refresh (best-effort, 失敗してもデータは保存済み)
+    try { await refreshMaterializedViews(); } catch { insertErrors.push('マテビューリフレッシュに失敗(データは保存済み)'); }
+
+    return NextResponse.json({
+      ok: true,
+      sheetsProcessed,
+      companyCount: companyNames.length,
+      storeCount: storeByCode.size,
+      metricsCount: metricRows.length,
+      insertErrors: insertErrors.length > 0 ? insertErrors : undefined,
+    });
+  } catch (e) {
+    return NextResponse.json({
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+      insertErrors: insertErrors.length > 0 ? insertErrors : undefined,
+    }, { status: 500 });
   }
-
-  // 4. monthly_metrics — 同一 store×month を合算
-  const metricAgg = new Map<string, { refs: number; conns: number; brks: number }>();
-  for (const m of metrics) {
-    const code = makeCode(m, storeCodePrefix);
-    const storeId = storeCodeToId.get(code);
-    if (!storeId) continue;
-    const key = `${storeId}__${m.yearMonth}`;
-    const prev = metricAgg.get(key) || { refs: 0, conns: 0, brks: 0 };
-    prev.refs += m.referrals || 0;
-    prev.conns += m.connections || 0;
-    prev.brks += m.brokerage || 0;
-    metricAgg.set(key, prev);
-  }
-
-  const metricRows = [...metricAgg.entries()].map(([key, d]) => {
-    const [storeId, yearMonth] = key.split('__');
-    return {
-      store_id: storeId, year_month: yearMonth,
-      referrals: d.refs, connections: d.conns, brokerage: d.brks,
-      referral_rate: d.refs > 0 ? Math.round((d.brks / d.refs) * 10000) / 10000 : null,
-      target_referrals: 0,
-    };
-  });
-
-  for (let i = 0; i < metricRows.length; i += 500) {
-    const { error } = await db.from('monthly_metrics').upsert(metricRows.slice(i, i + 500), { onConflict: 'store_id,year_month' });
-    if (error) insertErrors.push(`metrics: ${error.message}`);
-  }
-
-  // 5. batch
-  await db.from('import_batches').insert({
-    id: `${agencyId}_${Date.now()}`,
-    file_name: fileName,
-    import_type: agencyId.replace('ag-', ''),
-    sheet_name: (sheetsProcessed || []).join(', ') || agencyName,
-    row_count: metrics.length,
-    imported_by: user.id,
-  });
-
-  // 6. refresh
-  try { await refreshMaterializedViews(); } catch { insertErrors.push('マテビューリフレッシュに失敗'); }
-
-  return NextResponse.json({
-    ok: true,
-    sheetsProcessed,
-    companyCount: companyNames.length,
-    storeCount: storeByCode.size,
-    metricsCount: metricRows.length,
-    insertErrors: insertErrors.length > 0 ? insertErrors : undefined,
-  });
 }
 
 function makeCode(m: GenericMetric, prefix: string): string {
